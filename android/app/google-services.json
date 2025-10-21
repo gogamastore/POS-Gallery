@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "19804179052",
+    "project_id": "gallery-makassar",
+    "storage_bucket": "gallery-makassar.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:19804179052:android:3baaaef42552d8d8de2649",
+        "android_client_info": {
+          "package_name": "store.gallerymakassar.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCpWqu52Z0gW8woAjkpX3uGcVAjuTwqvb0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

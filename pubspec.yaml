@@ -1,0 +1,62 @@
+name: myapp
+description: "A new Flutter project."
+
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 8.2.1+18
+
+environment:
+  sdk: '>=3.2.3 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  firebase_core: ^3.15.2
+  cloud_firestore: ^5.6.12
+  flutter_riverpod: ^2.6.1
+  intl: ^0.20.2
+  firebase_auth: ^5.7.0
+  firebase_storage: ^12.4.10
+  audioplayers: ^6.5.1
+  ionicons: ^0.2.2
+  url_launcher: ^6.3.2
+  uuid: ^4.5.1
+  google_fonts: ^6.3.1
+  cached_network_image: ^3.4.1
+  collection: ^1.19.1
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+  mobile_scanner: ^7.0.1
+  image_picker: ^1.2.0
+  fl_chart: ^1.1.1
+  provider: ^6.1.5+1
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  firebase_ai: ^2.3.0
+  lucide_icons: ^0.257.0
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.11
+  freezed: ^2.5.3
+  json_serializable: ^6.8.0
+  flutter_launcher_icons: ^0.14.4
+
+# DIPERBAIKI: Konfigurasi untuk flutter_launcher_icons, menonaktifkan iOS
+flutter_launcher_icons:
+  android: "launcher_icon" # Gunakan "launcher_icon" sebagai nama default
+  ios: false # Diubah ke false untuk melewati pembuatan ikon iOS
+  image_path: "assets/logo/logo.png"
+  min_sdk_android: 21 # Opsional: Untuk mendukung ikon adaptif
+
+flutter:
+  uses-material-design: true
+
+  # Menambahkan deklarasi aset untuk suara dan logo
+  assets:
+    - assets/sounds/
+    - assets/logo/
