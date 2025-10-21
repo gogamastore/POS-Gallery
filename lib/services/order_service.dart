@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 
 import '../models/order.dart';
@@ -154,30 +156,69 @@ class OrderService {
     if (statuses.isEmpty) {
       return [];
     }
-    final snapshot = await _db
-        .collection('orders')
-        .where('status', whereIn: statuses)
-        .orderBy('date', descending: true)
-        .get();
-    final orders =
-        snapshot.docs.map((doc) => Order.fromFirestore(doc)).toList();
-    final enrichedOrders = await Future.wait(orders.map((order) async {
-      final enrichedProducts = await _enrichProducts(order.products);
-      return order.copyWith(products: enrichedProducts);
-    }));
-    return enrichedOrders;
+    try {
+      final snapshot = await _db
+          .collection('orders')
+          .where('status', whereIn: statuses)
+          .orderBy('date', descending: true)
+          .get();
+      final orders =
+          snapshot.docs.map((doc) => Order.fromFirestore(doc)).toList();
+      final enrichedOrders = await Future.wait(orders.map((order) async {
+        final enrichedProducts = await _enrichProducts(order.products);
+        return order.copyWith(products: enrichedProducts);
+      }));
+      return enrichedOrders;
+    } on FirebaseException catch (e, s) {
+      if (e.code == 'failed-precondition') {
+        final urlMatch = RegExp(
+                r'(https://console.firebase.google.com/project/[^/]+/database/[^/]+/indexes[?]create_composite=.*?)')
+            .firstMatch(e.message ?? '');
+        if (urlMatch != null) {
+          final url = urlMatch.group(0);
+          developer.log(
+            'FIRESTORE INDEX REQUIRED!\nBuka URL ini di browser untuk membuatnya:\n$url',
+            name: 'FirestoreIndex',
+            level: 1000, // SEVERE
+            error: e,
+            stackTrace: s,
+          );
+        }
+      }
+      rethrow; // Tetap lemparkan error agar bisa ditangani di UI
+    }
   }
 
   Future<List<Order>> getAllOrders() async {
-    final snapshot =
-        await _db.collection('orders').orderBy('date', descending: true).get();
-    final orders =
-        snapshot.docs.map((doc) => Order.fromFirestore(doc)).toList();
-    final enrichedOrders = await Future.wait(orders.map((order) async {
-      final enrichedProducts = await _enrichProducts(order.products);
-      return order.copyWith(products: enrichedProducts);
-    }));
-    return enrichedOrders;
+    try {
+      final snapshot = await _db
+          .collection('orders')
+          .orderBy('date', descending: true)
+          .get();
+      final orders =
+          snapshot.docs.map((doc) => Order.fromFirestore(doc)).toList();
+      final enrichedOrders = await Future.wait(orders.map((order) async {
+        final enrichedProducts = await _enrichProducts(order.products);
+        return order.copyWith(products: enrichedProducts);
+      }));
+      return enrichedOrders;
+    } on FirebaseException catch (e, s) {
+      if (e.code == 'failed-precondition') {
+        final urlMatch =
+            RegExp(r'https?://[^\]*\)').firstMatch(e.message ?? '');
+        if (urlMatch != null) {
+          final url = urlMatch.group(0);
+          developer.log(
+            'FIRESTORE INDEX REQUIRED!\nBuka URL ini di browser untuk membuatnya:\n$url',
+            name: 'FirestoreIndex',
+            level: 1000, // SEVERE
+            error: e,
+            stackTrace: s,
+          );
+        }
+      }
+      rethrow; // Tetap lemparkan error agar bisa ditangani di UI
+    }
   }
 
   Future<Order?> getOrderById(String orderId) async {

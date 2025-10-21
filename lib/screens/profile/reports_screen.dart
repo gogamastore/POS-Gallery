@@ -3,10 +3,8 @@ import 'package:ionicons/ionicons.dart';
 
 import '../reports/customer_report_screen.dart';
 import '../reports/operational_costs_screen.dart';
-import '../reports/payable_report_screen.dart';
 import '../reports/product_sales_report_screen.dart';
 import '../reports/purchase_report_screen.dart';
-import '../reports/receivable_report_screen.dart';
 import '../reports/sales_report_screen.dart';
 import '../reports/stock_flow_report_screen.dart';
 import '../reports/profit_loss_screen.dart'; // 1. IMPORT PROFIT LOSS SCREEN
@@ -61,22 +59,6 @@ class ReportsScreen extends StatelessWidget {
         description: 'Analisis penjualan per item produk.',
         onView: () => Navigator.of(context).push(MaterialPageRoute(
           builder: (context) => const ProductSalesReportScreen(),
-        )),
-      ),
-      ReportCardData(
-        icon: Ionicons.document_attach_outline,
-        title: 'Laporan Piutang Usaha',
-        description: 'Lacak pesanan yang belum dibayar.',
-        onView: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (context) => const ReceivableReportScreen(),
-        )),
-      ),
-      ReportCardData(
-        icon: Ionicons.receipt_outline,
-        title: 'Laporan Utang Dagang',
-        description: 'Lacak pembelian kredit yang belum lunas.',
-        onView: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (context) => const PayableReportScreen(),
         )),
       ),
       ReportCardData(

@@ -9,7 +9,7 @@ import 'reports_screen.dart';
 import 'security_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../models/user_model.dart';
-import 'my_orders_screen.dart';
+import '../../screens/orders/orders_screen.dart';
 import '../ai/ai_stock_suggestion_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -102,10 +102,11 @@ class ProfileScreen extends ConsumerWidget {
                               context,
                               icon: Icons.receipt_long_outlined,
                               title: 'Pesanan',
-                              onTap: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                      builder: (context) =>
-                                          const MyOrdersScreen())),
+                              onTap: () {
+                                Navigator.of(context).push(MaterialPageRoute(
+                                    builder: (context) =>
+                                        const OrdersScreen()));
+                              },
                             ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
                             _buildProfileMenuItem(

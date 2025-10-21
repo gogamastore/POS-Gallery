@@ -51,12 +51,12 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyAd5OIAngqc2sOkAEcMM-KKrJ2cx5UFlVc',
-    appId: '1:19804179052:web:4b082e68a868427dde2649',
+    appId: '1:19804179052:web:3e4f61d1f38541c1de2649',
     messagingSenderId: '19804179052',
     projectId: 'gallery-makassar',
     authDomain: 'gallery-makassar.firebaseapp.com',
     storageBucket: 'gallery-makassar.firebasestorage.app',
-    measurementId: 'G-JTRK4XJN67',
+    measurementId: 'G-1KNRT9E1S2',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
