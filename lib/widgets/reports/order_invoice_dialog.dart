@@ -35,7 +35,8 @@ class OrderInvoiceDialog extends StatelessWidget {
                   const SizedBox(height: 16),
                   _buildInfoRow(
                       'Tanggal:', dateFormatter.format(order.date.toDate())),
-                  _buildInfoRow('Pelanggan:', order.customer),
+                  // PERBAIKAN: Mengakses nama pelanggan dari Map
+                  _buildInfoRow('Pelanggan:', order.customerDetails?['name'] ?? 'N/A'),
                   const Divider(height: 24),
                   _buildItemsTable(context, currencyFormatter),
                   const Divider(height: 24),
@@ -71,7 +72,7 @@ class OrderInvoiceDialog extends StatelessWidget {
               ?.copyWith(fontWeight: FontWeight.bold),
         ),
         Text(
-          '#${order.id}',
+          '#${order.id ?? 'N/A'}',
           style: Theme.of(context)
               .textTheme
               .bodySmall
@@ -109,14 +110,18 @@ class OrderInvoiceDialog extends StatelessWidget {
             DataColumn(label: Text('Subtotal'), numeric: true),
           ],
           rows: order.products.map((item) {
-            final subtotal = item.price * item.quantity;
+            // PERBAIKAN: Mengakses data dari Map dengan aman
+            final price = (item['price'] as num? ?? 0).toDouble();
+            final quantity = (item['quantity'] as num? ?? 0).toInt();
+            final name = item['name'] as String? ?? 'N/A';
+            final subtotal = price * quantity;
             return DataRow(
               cells: [
                 DataCell(SizedBox(
                     width: 150,
-                    child: Text(item.name, overflow: TextOverflow.ellipsis))),
-                DataCell(Text(item.quantity.toString())),
-                DataCell(Text(formatter.format(item.price))),
+                    child: Text(name, overflow: TextOverflow.ellipsis))),
+                DataCell(Text(quantity.toString())),
+                DataCell(Text(formatter.format(price))),
                 DataCell(Text(formatter.format(subtotal))),
               ],
             );
@@ -127,8 +132,8 @@ class OrderInvoiceDialog extends StatelessWidget {
   }
 
   Widget _buildFooter(BuildContext context, NumberFormat formatter) {
-    final total =
-        double.tryParse(order.total.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0.0;
+    // PERBAIKAN: Langsung menggunakan order.total yang sudah double
+    final total = order.total;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

@@ -19,11 +19,17 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class DashboardScreenState extends ConsumerState<DashboardScreen> {
+  // --- PERBAIKAN: Menggunakan invalidate untuk refresh ---
   Future<void> _refreshData() async {
-    await ref.refresh(dashboardDataProvider.future);
-    await ref.refresh(salesAnalyticsProvider.future);
-    // Refresh user data juga jika diperlukan
-    await ref.refresh(userDataProvider.future);
+    ref.invalidate(dashboardDataProvider);
+    ref.invalidate(salesAnalyticsProvider);
+    ref.invalidate(userDataProvider);
+    // Tunggu semua provider selesai me-refresh
+    await Future.wait([
+      ref.read(dashboardDataProvider.future),
+      ref.read(salesAnalyticsProvider.future),
+      ref.read(userDataProvider.future),
+    ]);
   }
 
   @override
@@ -63,8 +69,7 @@ class DashboardScreenState extends ConsumerState<DashboardScreen> {
               children: [
                 userDataAsync.when(
                   data: (user) => _buildHeader(user),
-                  loading: () => _buildHeader(
-                      null), // Tampilkan header dengan state loading
+                  loading: () => _buildHeader(null),
                   error: (err, stack) =>
                       Center(child: Text('Gagal memuat data user: $err')),
                 ),
@@ -120,8 +125,7 @@ class DashboardScreenState extends ConsumerState<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                user?.name ??
-                    'Memuat pengguna...', // Tampilkan nama atau pesan loading
+                user?.name ?? 'Memuat pengguna...',
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -131,7 +135,7 @@ class DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Jabatan : ${user?.position ?? '...'}', // Tampilkan jabatan atau ...
+                'Jabatan : ${user?.position ?? '...'}',
                 style: const TextStyle(
                   fontSize: 14,
                   color: Color(0xFF7F8C8D),
@@ -394,7 +398,8 @@ class DashboardScreenState extends ConsumerState<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  order.customer,
+                  // --- PERBAIKAN: Mengakses nama pelanggan dari Map ---
+                  order.customerDetails?['name'] ?? 'N/A',
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -415,7 +420,8 @@ class DashboardScreenState extends ConsumerState<DashboardScreen> {
           Expanded(
             flex: 2,
             child: Text(
-              order.total,
+              // --- PERBAIKAN: Memformat total harga ---
+              NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(order.total),
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 14,
@@ -452,14 +458,10 @@ class DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
-      case 'delivered':
+      case 'success':
         return const Color(0xFF27AE60);
-      case 'shipped':
-        return const Color(0xFF3498DB);
       case 'processing':
         return const Color(0xFFF39C12);
-      case 'pending':
-        return const Color(0xFFE74C3C);
       case 'cancelled':
         return const Color(0xFF95A5A6);
       default:
@@ -469,14 +471,10 @@ class DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   String _getStatusText(String status) {
     switch (status.toLowerCase()) {
-      case 'delivered':
+      case 'success':
         return 'Selesai';
-      case 'shipped':
-        return 'Dikirim';
       case 'processing':
         return 'Diproses';
-      case 'pending':
-        return 'Menunggu';
       case 'cancelled':
         return 'Dibatalkan';
       default:

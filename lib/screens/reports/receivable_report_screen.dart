@@ -61,6 +61,8 @@ class _ReceivableReportScreenState extends State<ReceivableReportScreen> {
   Future<void> _showInvoiceDialog(ReceivableData receivable) async {
     try {
       final order = await _reportService.getOrderById(receivable.orderId);
+      
+      // PERBAIKAN: Pemeriksaan `mounted` sebelum menggunakan BuildContext
       if (!mounted) return;
 
       showDialog(
@@ -69,8 +71,21 @@ class _ReceivableReportScreenState extends State<ReceivableReportScreen> {
           return OrderInvoiceDialog(
             order: order,
             onMarkAsPaid: () async {
+              // PERBAIKAN: Memastikan ID tidak null sebelum digunakan
+              final orderId = order.id;
+              if (orderId == null) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Error: ID Pesanan tidak valid.')),
+                  );
+                }
+                return;
+              }
+
               try {
-                await _reportService.markOrderAsPaid(order.id);
+                await _reportService.markOrderAsPaid(orderId);
+                
+                // PERBAIKAN: Pemeriksaan `mounted` sebelum menggunakan BuildContext
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -78,12 +93,13 @@ class _ReceivableReportScreenState extends State<ReceivableReportScreen> {
                       backgroundColor: Colors.green,
                     ),
                   );
-                  _generateReport();
+                  _generateReport(); // Muat ulang laporan
                 }
               } catch (e) {
+                // PERBAIKAN: Pemeriksaan `mounted` sebelum menggunakan BuildContext
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Gagal: $e')),
+                    SnackBar(content: Text('Gagal memperbarui: $e')),
                   );
                 }
               }
@@ -117,7 +133,6 @@ class _ReceivableReportScreenState extends State<ReceivableReportScreen> {
     }
   }
 
-  // --- FUNGSI UNTUK EKSPOR PDF ---
   void _exportToPdf() {
     if (_reportData == null || _reportData!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -134,7 +149,6 @@ class _ReceivableReportScreenState extends State<ReceivableReportScreen> {
       appBar: AppBar(
         title: const Text('Laporan Piutang Usaha'),
         actions: [
-          // --- TOMBOL DOWNLOAD PDF ---
           IconButton(
             icon: const Icon(Ionicons.download_outline),
             onPressed: (_reportData != null && _reportData!.isNotEmpty) ? _exportToPdf : null,

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../../providers/order_provider.dart';
-import '../../widgets/order_card.dart';
+import 'package:myapp/models/order.dart';
+import 'package:myapp/providers/order_provider.dart';
+import 'package:myapp/widgets/order_card.dart';
 
 class OrderListScreen extends ConsumerStatefulWidget {
   const OrderListScreen({super.key});
@@ -14,7 +14,13 @@ class OrderListScreen extends ConsumerStatefulWidget {
 class _OrderListScreenState extends ConsumerState<OrderListScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _statuses = ['processing', 'success', 'cancelled'];
+  // PERBAIKAN: Status disesuaikan dengan model dan provider yang baru.
+  final List<String> _statuses = ['all', 'success', 'cancelled'];
+  final Map<String, String> _statusLabels = {
+    'all': 'SEMUA',
+    'success': 'BERHASIL',
+    'cancelled': 'DIBATALKAN',
+  };
 
   @override
   void initState() {
@@ -30,7 +36,8 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
   @override
   Widget build(BuildContext context) {
-    final statusOrderCounts = ref.watch(orderStatusCountsProvider);
+    // PERBAIKAN: Menggunakan `allOrdersProvider` untuk mendapatkan data dan menghitung jumlah.
+    final allOrdersAsync = ref.watch(allOrdersProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -38,14 +45,29 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
-          tabs: _statuses.map((status) {
-            final count = statusOrderCounts[status] ?? 0;
-            return Tab(text: '${status.toUpperCase()} ($count)');
-          }).toList(),
+          tabs: allOrdersAsync.when(
+            data: (orders) {
+              // Hitung jumlah untuk setiap status dari data yang ada.
+              final counts = {
+                'all': orders.length,
+                'success': orders.where((o) => o.status.toLowerCase() == 'success').length,
+                'cancelled': orders.where((o) => o.status.toLowerCase() == 'cancelled').length,
+              };
+              return _statuses.map((status) {
+                final label = _statusLabels[status] ?? status.toUpperCase();
+                final count = counts[status] ?? 0;
+                return Tab(text: '$label ($count)');
+              }).toList();
+            },
+            // Saat loading atau error, tampilkan tab tanpa jumlah.
+            loading: () => _statuses.map((status) => Tab(text: _statusLabels[status] ?? status.toUpperCase())).toList(),
+            error: (e, s) => _statuses.map((status) => Tab(text: _statusLabels[status] ?? status.toUpperCase())).toList(),
+          ),
         ),
       ),
       body: TabBarView(
         controller: _tabController,
+        // PERBAIKAN: Setiap tab sekarang akan menerima status dan memfilter datanya sendiri.
         children: _statuses.map((status) {
           return OrderListTab(status: status);
         }).toList(),
@@ -54,36 +76,62 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   }
 }
 
+// Widget terpisah untuk konten setiap tab.
 class OrderListTab extends ConsumerWidget {
   final String status;
-
   const OrderListTab({super.key, required this.status});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ordersAsyncValue = ref.watch(ordersByStatusProvider(status));
+    // PERBAIKAN: Widget ini juga memantau `allOrdersProvider`.
+    final allOrdersAsync = ref.watch(allOrdersProvider);
 
-    return ordersAsyncValue.when(
-      data: (orders) {
-        if (orders.isEmpty) {
-          return Center(
-            child: Text('Tidak ada pesanan dengan status $status.'),
-          );
+    return allOrdersAsync.when(
+      data: (allOrders) {
+        // Filter pesanan berdasarkan status yang diterima widget ini.
+        final List<Order> filteredOrders;
+        if (status == 'all') {
+          filteredOrders = allOrders;
+        } else {
+          filteredOrders = allOrders.where((order) => order.status.toLowerCase() == status).toList();
         }
+
+        if (filteredOrders.isEmpty) {
+          return const Center(child: Text('Tidak ada pesanan dengan status ini.'));
+        }
+
         return RefreshIndicator(
-          // --- PERBAIKAN FINAL & PASTI BENAR: Panggil metode refresh() di Notifier ---
-          onRefresh: () => ref.read(orderProvider.notifier).refresh(),
+          onRefresh: () async {
+            // PERBAIKAN: Menggunakan provider yang benar untuk invalidasi.
+            ref.invalidate(allOrdersProvider);
+            await ref.read(allOrdersProvider.future);
+          },
           child: ListView.builder(
-            padding: const EdgeInsets.all(8.0),
-            itemCount: orders.length,
+            padding: const EdgeInsets.only(top: 8),
+            itemCount: filteredOrders.length,
             itemBuilder: (context, index) {
-              return OrderCard(order: orders[index]);
+              return OrderCard(order: filteredOrders[index]);
             },
           ),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, stack) => Center(child: Text('Gagal memuat pesanan: $err')),
+      error: (e, s) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('Gagal memuat pesanan: $e'),
+              const SizedBox(height: 10),
+              ElevatedButton(
+                onPressed: () => ref.invalidate(allOrdersProvider),
+                child: const Text('Coba Lagi'),
+              )
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

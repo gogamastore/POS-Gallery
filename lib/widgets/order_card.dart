@@ -11,15 +11,17 @@ class OrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-
     return InkWell(
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => OrderDetailScreen(orderId: order.id),
-          ),
-        );
+        // Mencegah navigasi jika ID null
+        if (order.id != null) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              // PERBAIKAN 1: Memastikan order.id tidak null saat dikirim.
+              builder: (context) => OrderDetailScreen(orderId: order.id!),
+            ),
+          );
+        }
       },
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -34,54 +36,70 @@ class OrderCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '#${order.id.substring(0, 8)}...',
+                    // PERBAIKAN 2: Menangani ID yang bisa null dengan aman.
+                    '#${order.id?.substring(0, 8) ?? 'N/A'}...',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: formatter.getStatusColor(order.status).withOpacity(0.1),
+                      // PERBAIKAN 3: Menggunakan .withAlpha untuk menghindari deprecation warning.
+                      color: formatter.getStatusColor(order.status).withAlpha((255 * 0.1).round()),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      formatter.getStatusText(order.status),
+                      order.status.toUpperCase(),
                       style: TextStyle(
-                        color: formatter.getStatusColor(order.status),
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
+                        color: formatter.getStatusColor(order.status),
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                order.customer,
-                style: TextStyle(color: Colors.grey[700], fontSize: 14),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(order.date.toDate()),
-                style: TextStyle(color: Colors.grey[500], fontSize: 12),
-              ),
               const Divider(height: 20),
+              // Asumsi dari error, widget ini menampilkan nama pelanggan dan tanggal.
+              _buildInfoRow(
+                icon: Icons.person_outline,
+                // PERBAIKAN 4: Mengakses nama pelanggan dari map `customerDetails`.
+                text: order.customerDetails?['name'] ?? 'Nama Pelanggan Tidak Ada',
+              ),
+              const SizedBox(height: 6),
+              _buildInfoRow(
+                icon: Icons.calendar_today_outlined,
+                text: DateFormat('d MMMM yyyy, HH:mm').format(order.date.toDate()),
+              ),
+              const SizedBox(height: 12),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    '${order.products.length} item',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                  Text(
-                    currencyFormatter.format(double.tryParse(order.total) ?? 0),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                    // PERBAIKAN 5: Memformat nilai total menjadi String.
+                    formatter.formatCurrency(order.total),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.deepPurple,
+                    ),
                   ),
                 ],
-              ),
+              )
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // Helper widget untuk konsistensi
+  Widget _buildInfoRow({required IconData icon, required String text}) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey.shade600),
+        const SizedBox(width: 8),
+        Text(text, style: TextStyle(color: Colors.grey.shade700)),
+      ],
     );
   }
 }

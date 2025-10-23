@@ -44,10 +44,11 @@ class _CustomerReportScreenState extends State<CustomerReportScreen> {
         });
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal menghasilkan laporan: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal membuat laporan: $e')),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -56,7 +57,7 @@ class _CustomerReportScreenState extends State<CustomerReportScreen> {
       }
     }
   }
-
+  
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -74,78 +75,6 @@ class _CustomerReportScreenState extends State<CustomerReportScreen> {
       });
     }
   }
-
-  void _showHistoryDialog(BuildContext context, CustomerReport customer) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Riwayat Transaksi: ${customer.name}'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: customer.orders.isEmpty
-                ? const Text('Tidak ada transaksi pada periode ini.')
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: customer.orders.length,
-                    itemBuilder: (context, index) {
-                      final order = customer.orders[index];
-                      return ListTile(
-                        title: Text('ID: ${order.id}'),
-                        subtitle: Text(DateFormat('dd MMM yyyy', 'id_ID').format(order.date.toDate())),
-                        trailing: Text(_currencyFormatter.format(double.tryParse(order.total.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0.0)),
-                        onTap: () {
-                          Navigator.of(context).pop(); // Tutup dialog riwayat
-                          _showInvoiceDialog(order); // Buka dialog faktur
-                        },
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              child: const Text('Tutup'),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _showInvoiceDialog(app_order.Order order) async {
-    // Simpan BuildContext sebelum async gap
-    final currentContext = context;
-    
-    showDialog(
-      context: currentContext,
-      builder: (dialogContext) { // Gunakan context dari builder dialog
-        return OrderInvoiceDialog(
-          order: order,
-          onMarkAsPaid: () async {
-            try {
-              await _reportService.markOrderAsPaid(order.id);
-              if (!mounted) return; // Cek mounted tepat sebelum menggunakan context
-              Navigator.of(dialogContext).pop(); // Gunakan context dialog untuk menutup
-              ScaffoldMessenger.of(currentContext).showSnackBar(
-                const SnackBar(
-                  content: Text('Pesanan berhasil ditandai lunas.'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-              _generateReport(); // Perbarui laporan setelah menandai lunas
-            } catch (e) {
-              if (!mounted) return; // Cek mounted tepat sebelum menggunakan context
-              ScaffoldMessenger.of(currentContext).showSnackBar(
-                SnackBar(content: Text('Gagal: $e')),
-              );
-            }
-          },
-        );
-      },
-    );
-  }
-
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +97,7 @@ class _CustomerReportScreenState extends State<CustomerReportScreen> {
   }
 
   Widget _buildDateRangeSelector() {
-    return Padding(
+     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
@@ -192,7 +121,7 @@ class _CustomerReportScreenState extends State<CustomerReportScreen> {
     );
   }
 
-  Widget _buildDateButton(bool isStartDate, String label, DateTime date) {
+   Widget _buildDateButton(bool isStartDate, String label, DateTime date) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -213,56 +142,134 @@ class _CustomerReportScreenState extends State<CustomerReportScreen> {
     if (_reportData!.isEmpty) {
       return const Center(child: Text('Tidak ada data pelanggan untuk rentang tanggal ini.'));
     }
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: _buildCustomerDataTable(),
+      ),
+    );
+  }
 
-    return ListView.builder(
-      itemCount: _reportData!.length,
-      itemBuilder: (context, index) {
-        final customer = _reportData![index];
-        return InkWell(
-          onTap: () => _showHistoryDialog(context, customer),
-          child: Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(customer.name, style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildStatItem('Total Transaksi', '${customer.transactionCount}x'),
-                      _buildStatItem('Total Belanja', _currencyFormatter.format(customer.totalSpent)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                   if (customer.receivables > 0)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Chip(
-                        label: Text('Piutang: ${_currencyFormatter.format(customer.receivables)}'),
-                        backgroundColor: Colors.orange.shade100,
-                        labelStyle: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                ],
+  Widget _buildCustomerDataTable() {
+    return DataTable(
+      columns: const [
+        DataColumn(label: Text('Pelanggan')),
+        DataColumn(label: Text('Total Transaksi'), numeric: true),
+        DataColumn(label: Text('Total Belanja'), numeric: true),
+        DataColumn(label: Text('Total Piutang'), numeric: true),
+      ],
+      rows: _reportData!.map((customer) {
+        return DataRow(
+          cells: [
+            DataCell(
+              SizedBox(
+                width: 200,
+                child: Text(customer.name, overflow: TextOverflow.ellipsis),
               ),
+              onTap: () => _showCustomerDetails(customer),
+            ),
+            DataCell(
+              Text(customer.transactionCount.toString()),
+              onTap: () => _showCustomerDetails(customer),
+            ),
+            DataCell(
+              Text(_currencyFormatter.format(customer.totalSpent)),
+              onTap: () => _showCustomerDetails(customer),
+            ),
+            DataCell(
+              Text(_currencyFormatter.format(customer.receivables)),
+              onTap: () => _showCustomerDetails(customer),
+            ),
+          ],
+        );
+      }).toList(),
+    );
+  }
+
+  void _showCustomerDetails(CustomerReport customer) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Detail Transaksi - ${customer.name}'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: customer.orders.length,
+              itemBuilder: (context, index) {
+                final order = customer.orders[index];
+                return Card(
+                  child: ListTile(
+                    title: Text('ID Pesanan: ${order.id}'),
+                    subtitle: Text('Tanggal: ${DateFormat('dd/MM/yy').format(order.date.toDate())}\n'
+                        'Status: ${order.status} (${order.paymentStatus})'),
+                    trailing: Text(_currencyFormatter.format(order.total)),
+                    onTap: () {
+                       _showOrderDetailsDialog(context, order);
+                    },
+                  ),
+                );
+              },
             ),
           ),
+          actions: [
+            TextButton(
+              child: const Text('Tutup'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _buildStatItem(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 4),
-        Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-      ],
+  void _showOrderDetailsDialog(BuildContext dialogContext, app_order.Order order) {
+    showDialog(
+      context: dialogContext,
+      builder: (context) {
+        return OrderInvoiceDialog(
+          order: order,
+          onMarkAsPaid: () async {
+            final orderId = order.id;
+            // PERBAIKAN: Memastikan orderId tidak null
+            if (orderId == null || orderId.isEmpty) {
+              // PERBAIKAN: Pemeriksaan mounted sebelum menggunakan context
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Error: ID Pesanan tidak valid.')),
+                );
+              }
+              return;
+            }
+
+            try {
+              await _reportService.markOrderAsPaid(orderId);
+              // PERBAIKAN: Pemeriksaan mounted sebelum menggunakan context
+              if (mounted) {
+                Navigator.of(context).pop(); // Tutup dialog faktur
+                Navigator.of(dialogContext).pop(); // Tutup dialog detail pelanggan
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Pesanan berhasil ditandai LUNAS.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+              _generateReport(); // Muat ulang laporan
+            } catch (e) {
+              // PERBAIKAN: Pemeriksaan mounted sebelum menggunakan context
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Gagal memperbarui status: $e')),
+                );
+              }
+            }
+          },
+        );
+      },
     );
   }
 }

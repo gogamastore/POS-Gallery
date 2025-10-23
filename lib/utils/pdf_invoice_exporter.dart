@@ -67,7 +67,8 @@ class PdfInvoiceExporter {
         pw.Text('FAKTUR PENJUALAN',
             style: pw.TextStyle(font: boldFont, fontSize: 24)),
         pw.SizedBox(height: 12),
-        _buildDetailRow('No. Pesanan:', order.id, font),
+        // PERBAIKAN: null safety untuk order.id
+        _buildDetailRow('No. Pesanan:', order.id ?? 'N/A', font),
         _buildDetailRow('Tanggal:',
             DateFormat('dd MMMM yyyy, HH:mm', 'id_ID').format(order.date.toDate()),
             font),
@@ -85,9 +86,10 @@ class PdfInvoiceExporter {
       children: [
         pw.Text('Kepada:', style: pw.TextStyle(font: boldFont, fontSize: 16)),
         pw.SizedBox(height: 8),
-        pw.Text(order.customer, style: pw.TextStyle(font: font)),
-        pw.Text(order.customerAddress, style: pw.TextStyle(font: font)),
-        pw.Text('Telp/WA: ${order.customerPhone}',
+        // PERBAIKAN: Akses data dari Map
+        pw.Text(order.customerDetails?['name'] ?? 'Pelanggan', style: pw.TextStyle(font: font)),
+        pw.Text(order.customerDetails?['address'] ?? 'Alamat tidak tersedia', style: pw.TextStyle(font: font)),
+        pw.Text('Telp/WA: ${order.customerDetails?['phone'] ?? '-'}',
             style: pw.TextStyle(font: font)),
       ],
     );
@@ -100,11 +102,15 @@ class PdfInvoiceExporter {
     final headers = ['Produk', 'Jumlah', 'Harga', 'Subtotal'];
 
     final data = order.products.map((product) {
+      // PERBAIKAN: Akses data dari Map dengan aman
+      final name = product['name'] as String? ?? 'N/A';
+      final quantity = (product['quantity'] as num? ?? 0).toInt();
+      final price = (product['price'] as num? ?? 0).toDouble();
       return [
-        product.name,
-        product.quantity.toString(),
-        'Rp ${formatter.format(product.price)}',
-        'Rp ${formatter.format(product.price * product.quantity)}',
+        name,
+        quantity.toString(),
+        'Rp ${formatter.format(price)}',
+        'Rp ${formatter.format(price * quantity)}',
       ];
     }).toList();
 
@@ -129,20 +135,15 @@ class PdfInvoiceExporter {
   pw.Widget _buildTotal(Order order, pw.Font boldFont, pw.Font font) {
     final formatter =
         NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-    final subtotal =
-        order.products.fold(0.0, (sum, p) => sum + (p.price * p.quantity));
-    final total = double.tryParse(order.total) ?? 0.0;
+    // PERBAIKAN: Langsung gunakan order.total
+    final total = order.total;
 
     return pw.SizedBox(
         width: 250,
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            _buildTotalRow(
-                'Subtotal Produk:', formatter.format(subtotal), font, boldFont),
-            pw.SizedBox(height: 4),
-            _buildTotalRow('Biaya Pengiriman:',
-                formatter.format(order.shippingFee ?? 0), font, boldFont),
+            // PERBAIKAN: Menghapus subtotal dan biaya pengiriman
             pw.Divider(height: 10),
             _buildTotalRow('TOTAL:', formatter.format(total), boldFont, boldFont,
                 isTotal: true),
@@ -187,15 +188,12 @@ class PdfInvoiceExporter {
   }
 
   String _getFormattedOrderStatus(String status) {
-    switch (status) {
+    // PERBAIKAN: Menghapus status yang tidak valid
+    switch (status.toLowerCase()) {
       case 'processing':
-        return 'Telah Diproses';
-      case 'shipped':
-        return 'Dikirim';
-      case 'delivered':
+        return 'Sedang Diproses';
+      case 'success':
         return 'Selesai';
-      case 'pending':
-        return 'Menunggu Diproses';
       case 'cancelled':
         return 'Dibatalkan';
       default:
@@ -204,7 +202,7 @@ class PdfInvoiceExporter {
   }
 
   String _getFormattedPaymentStatus(String status) {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'unpaid':
         return 'Belum Bayar';
       case 'paid':

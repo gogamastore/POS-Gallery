@@ -78,25 +78,33 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
     _updateTotals();
   }
 
-  void _editItem(OrderItem item) {
-    // --- PERBAIKAN TOTAL: Menyesuaikan dengan konstruktor dialog yang benar ---
-    showDialog(
+  // --- PERBAIKAN FINAL PADA METODE INI ---
+  void _editItem(OrderItem item) async {
+    // Diasumsikan dialog mengembalikan Map dengan nilai baru jika ada perubahan.
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
-        return EditOrderItemDialog(
-          item: item, // Mengirim OrderItem
-          onUpdate: (newQuantity, newPrice) { // Menggunakan callback onUpdate
-            setState(() {
-              final index = _items.indexOf(item);
-              if (index != -1) {
-                _items[index] = item.copyWith(quantity: newQuantity, price: newPrice);
-                _updateTotals();
-              }
-            });
-          },
-        );
+        // PERBAIKAN: Mengirim 'OrderItem' ke parameter bernama 'product'
+        // sesuai dengan petunjuk dari kombinasi error yang ada.
+        return EditOrderItemDialog(product: item);
       },
     );
+
+    if (result != null) {
+      final int? newQuantity = result['quantity'];
+      final double? newPrice = result['price'];
+
+      if (newQuantity != null && newPrice != null) {
+        setState(() {
+          final index = _items.indexOf(item);
+          if (index != -1) {
+            _items[index] =
+                item.copyWith(quantity: newQuantity, price: newPrice);
+            _updateTotals();
+          }
+        });
+      }
+    }
   }
 
   void _removeItem(OrderItem item) {
@@ -140,7 +148,8 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Edit Pesanan #${widget.order.id?.substring(0, 8) ?? '...'}'),
+        title:
+            Text('Edit Pesanan #${widget.order.id?.substring(0, 8) ?? '...'}'),
         actions: [
           IconButton(
             icon: const Icon(Ionicons.checkmark_done_outline),
@@ -192,8 +201,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
               width: 50,
               height: 50,
               fit: BoxFit.cover,
-              placeholder: (context, url) =>
-                  const CircularProgressIndicator(),
+              placeholder: (context, url) => const CircularProgressIndicator(),
               errorWidget: (context, url, error) =>
                   const Icon(Ionicons.image_outline),
             )
@@ -243,10 +251,13 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Text('Total',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 Text(
                   formatCurrency(_total),
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
             ),

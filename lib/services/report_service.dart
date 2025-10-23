@@ -1,62 +1,56 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/expense_item.dart';
-import '../models/product.dart';
 import '../models/order.dart' as app_order;
-import '../models/product_sales_data.dart';
-import '../models/product_sales_history.dart';
-import '../models/receivable_data.dart';
-import '../models/purchase.dart';
+import '../models/product.dart';
+import '../models/expense_item.dart';
 import '../models/customer_report.dart';
 import '../models/profit_loss_data.dart';
+import '../models/purchase.dart';
+import '../models/receivable_data.dart';
+import '../models/product_sales_data.dart';
+import '../models/product_sales_history.dart';
 
 class ReportService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // --- FUNGSI LAPORAN LABA RUGI (DIKEMBALIKAN KE VERSI SEBELUMNYA) ---
+  // --- FUNGSI LAPORAN LABA RUGI ---
   Future<ProfitLossData> getProfitLossData({
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    // 1. Ambil data pesanan yang sudah selesai dalam rentang waktu
     final ordersSnapshot = await _db
         .collection('orders')
         .where('validatedAt', isGreaterThanOrEqualTo: startDate)
         .where('validatedAt', isLessThanOrEqualTo: endDate)
-        .where('status', whereIn: [
-      'processing',
-      'Processing',
-      'Shipped',
-      'shipped',
-      'Delivered',
-      'delivered'
-    ]).get();
+        .where('status', isEqualTo: 'success') // Hanya pesanan sukses
+        .get();
 
     double totalRevenue = 0;
     double totalCOGS = 0;
 
-    // 2. Iterasi setiap pesanan untuk menghitung pendapatan dan HPP
     for (var doc in ordersSnapshot.docs) {
-      final order = app_order.Order.fromFirestore(doc);
-      try {
-        // Hitung total pendapatan dari setiap pesanan
-        String cleanTotal = order.total.replaceAll(RegExp(r'[^0-9.]'), '');
-        totalRevenue += double.tryParse(cleanTotal) ?? 0.0;
+      final order = app_order.Order.fromFirestore(doc as DocumentSnapshot<Map<String, dynamic>>);
+      
+      totalRevenue += order.total;
 
-        // Hitung HPP dengan mengambil data produk satu per satu dari database
-        for (var item in order.products) {
-          final productDoc =
-              await _db.collection('products').doc(item.productId).get();
-          if (productDoc.exists) {
-            final product = Product.fromFirestore(productDoc);
-            totalCOGS += (product.purchasePrice ?? 0.0) * item.quantity;
+      for (var item in order.products) {
+        try {
+          final productId = item['id'] as String?;
+          final quantity = (item['quantity'] as num? ?? 0);
+          
+          if (productId != null) {
+            final productDoc = await _db.collection('products').doc(productId).get();
+            if (productDoc.exists) {
+              final product = Product.fromFirestore(productDoc);
+              totalCOGS += (product.purchasePrice ?? 0.0) * quantity;
+            }
           }
+        } catch (e) {
+          // Lanjutkan jika ada error pada satu item
         }
-      } catch (e) {
-        // Abaikan jika ada error, anggap 0 untuk pesanan ini
       }
     }
 
-    // 3. Ambil dan hitung total biaya operasional
     final expensesSnapshot = await _db
         .collection('operational_expenses')
         .where('date', isGreaterThanOrEqualTo: startDate)
@@ -69,7 +63,6 @@ class ReportService {
       totalOperationalExpenses += expense.amount;
     }
 
-    // 4. Kalkulasi laba kotor dan laba bersih
     final double grossProfit = totalRevenue - totalCOGS;
     final double netProfit = grossProfit - totalOperationalExpenses;
 
@@ -92,20 +85,15 @@ class ReportService {
         .where('date', isLessThanOrEqualTo: endDate)
         .get();
 
-    return querySnapshot.docs
-        .map((doc) => ExpenseItem.fromFirestore(doc))
-        .toList();
+    return querySnapshot.docs.map((doc) => ExpenseItem.fromFirestore(doc)).toList();
   }
 
   Future<List<CustomerReport>> generateCustomerReport({
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    final DateTime inclusiveStartDate =
-        DateTime(startDate.year, startDate.month, startDate.day);
-    final DateTime exclusiveEndDate =
-        DateTime(endDate.year, endDate.month, endDate.day)
-            .add(const Duration(days: 1));
+    final DateTime inclusiveStartDate = DateTime(startDate.year, startDate.month, startDate.day);
+    final DateTime exclusiveEndDate = DateTime(endDate.year, endDate.month, endDate.day).add(const Duration(days: 1));
 
     final querySnapshot = await _db
         .collection('orders')
@@ -116,23 +104,20 @@ class ReportService {
     final reportMap = <String, CustomerReport>{};
 
     for (var doc in querySnapshot.docs) {
-      final order = app_order.Order.fromFirestore(doc);
-      final customerId =
-          order.customerId.isNotEmpty ? order.customerId : order.customer;
+      final order = app_order.Order.fromFirestore(doc as DocumentSnapshot<Map<String, dynamic>>);
+      
+      final customerId = order.customerDetails?['id'] as String?;
+      final customerName = order.customerDetails?['name'] as String?;
+      
+      if (customerId == null || customerName == null) continue;
 
-      double total = 0.0;
-      try {
-        String cleanTotal = order.total.replaceAll(RegExp(r'[^0-9.]'), '');
-        total = double.tryParse(cleanTotal) ?? 0.0;
-      } catch (e) {
-        total = 0.0;
-      }
+      final total = order.total;
 
       reportMap.putIfAbsent(
         customerId,
         () => CustomerReport(
           id: customerId,
-          name: order.customer,
+          name: customerName,
           transactionCount: 0,
           totalSpent: 0,
           receivables: 0,
@@ -141,53 +126,35 @@ class ReportService {
       );
 
       final report = reportMap[customerId]!;
-
       final isUnpaid = order.paymentStatus.toLowerCase() == 'unpaid';
-      final isValidStatus = [
-        'processing',
-        'Processing',
-        'Shipped',
-        'shipped',
-        'Delivered',
-        'delivered'
-      ].contains(order.status.toLowerCase());
-      final newReceivables =
-          report.receivables + (isUnpaid && isValidStatus ? total : 0);
+      
+      final isValidStatus = ['processing', 'success'].contains(order.status.toLowerCase());
+      final newReceivables = report.receivables + (isUnpaid && isValidStatus ? total : 0);
 
       reportMap[customerId] = report.copyWith(
         transactionCount: report.transactionCount + 1,
         totalSpent: report.totalSpent + total,
         receivables: newReceivables,
-        orders: [...report.orders, order]
-          ..sort((a, b) => b.date.compareTo(a.date)),
+        orders: [...report.orders, order]..sort((a, b) => b.date.compareTo(a.date)),
       );
     }
 
     final reportList = reportMap.values.toList();
     reportList.sort((a, b) => b.totalSpent.compareTo(a.totalSpent));
-
     return reportList;
   }
 
   Future<void> markOrderAsPaid(String orderId) async {
-    try {
-      final orderRef = _db.collection('orders').doc(orderId);
-      await orderRef.update({'paymentStatus': 'paid'});
-    } catch (e) {
-      throw Exception('Gagal memperbarui status pembayaran: $e');
-    }
+    await _db.collection('orders').doc(orderId).update({'paymentStatus': 'paid'});
   }
 
   Future<app_order.Order> getOrderById(String orderId) async {
-    try {
       final doc = await _db.collection('orders').doc(orderId).get();
       if (doc.exists) {
+        // PERBAIKAN: Menghapus cast yang tidak perlu
         return app_order.Order.fromFirestore(doc);
       }
       throw Exception('Pesanan tidak ditemukan.');
-    } catch (e) {
-      throw Exception('Gagal mengambil detail pesanan: $e');
-    }
   }
 
   Future<void> processPurchasePayment({
@@ -195,9 +162,7 @@ class ReportService {
     required String paymentMethod,
     String? notes,
   }) async {
-    final purchaseRef = _db.collection('purchase_transactions').doc(purchaseId);
-
-    await purchaseRef.update({
+    await _db.collection('purchase_transactions').doc(purchaseId).update({
       'paymentStatus': 'paid',
       'paymentMethod': paymentMethod,
       'paymentNotes': notes,
@@ -209,166 +174,76 @@ class ReportService {
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    final DateTime inclusiveStartDate =
-        DateTime(startDate.year, startDate.month, startDate.day);
-    final DateTime exclusiveEndDate =
-        DateTime(endDate.year, endDate.month, endDate.day)
-            .add(const Duration(days: 1));
-
     final query = _db
         .collection('purchase_transactions')
         .where('paymentMethod', whereIn: ['credit', 'Credit'])
-        .where('date', isGreaterThanOrEqualTo: inclusiveStartDate)
-        .where('date', isLessThan: exclusiveEndDate);
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThan: endDate.add(const Duration(days: 1)));
 
     final snapshot = await query.get();
-
-    final List<Purchase> payableList = snapshot.docs
-        .map((doc) => Purchase.fromMap(doc.id, doc.data()))
-        .toList();
-
+    final List<Purchase> payableList = snapshot.docs.map((doc) => Purchase.fromMap(doc.id, doc.data())).toList();
     payableList.sort((a, b) => a.date.compareTo(b.date));
-
     return payableList;
-  }
-
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      _fetchOrdersByPaymentStatus(
-    String paymentStatus,
-    DateTime startDate,
-    DateTime endDate,
-  ) {
-    return _db
-        .collection('orders')
-        .where('paymentStatus', isEqualTo: paymentStatus)
-        .where('date', isGreaterThanOrEqualTo: startDate)
-        .where('date', isLessThan: endDate)
-        .get()
-        .then((snapshot) => snapshot.docs);
   }
 
   Future<List<ReceivableData>> generateReceivableReport({
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    final DateTime inclusiveStartDate =
-        DateTime(startDate.year, startDate.month, startDate.day);
-    final DateTime exclusiveEndDate =
-        DateTime(endDate.year, endDate.month, endDate.day)
-            .add(const Duration(days: 1));
+    final query = _db
+        .collection('orders')
+        .where('paymentStatus', whereIn: ['unpaid', 'Unpaid'])
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThan: endDate.add(const Duration(days: 1)));
 
-    const List<String> paymentStatusVariations = ['unpaid', 'Unpaid'];
-    final List<Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>
-        paymentFutures = paymentStatusVariations
-            .map((status) => _fetchOrdersByPaymentStatus(
-                status, inclusiveStartDate, exclusiveEndDate))
-            .toList();
-
-    final List<List<QueryDocumentSnapshot>> paymentResults =
-        await Future.wait(paymentFutures);
-    final List<QueryDocumentSnapshot> allUnpaidDocs =
-        paymentResults.expand((docs) => docs).toList();
-
+    final snapshot = await query.get();
     final List<ReceivableData> receivableList = [];
-    const List<String> validOrderStates = [
-      'processing',
-      'Processing',
-      'Shipped',
-      'shipped',
-      'Delivered',
-      'delivered'
-    ];
-    const List<String> invalidOrderStates = ['canceled'];
+    
+    const validOrderStates = ['processing', 'success'];
 
-    for (var doc in allUnpaidDocs) {
-      final order = app_order.Order.fromFirestore(doc);
-      final orderStatusLower = order.status.toLowerCase();
-
-      if (validOrderStates.contains(orderStatusLower) &&
-          !invalidOrderStates.contains(orderStatusLower)) {
-        double total = 0.0;
-        try {
-          String cleanTotal = order.total.replaceAll(RegExp(r'[^0-9.]'), '');
-          total = double.tryParse(cleanTotal) ?? 0.0;
-        } catch (e) {
-          total = 0.0;
-        }
-
+    for (var doc in snapshot.docs) {
+      final order = app_order.Order.fromFirestore(doc as DocumentSnapshot<Map<String, dynamic>>);
+      if (validOrderStates.contains(order.status.toLowerCase())) {
         receivableList.add(
           ReceivableData(
-            orderId: order.id,
-            customerName: order.customer,
+            orderId: order.id ?? '',
+            customerName: order.customerDetails?['name'] ?? 'N/A',
             orderDate: order.date.toDate(),
             orderStatus: order.status,
-            totalReceivable: total,
+            totalReceivable: order.total,
           ),
         );
       }
     }
-
     receivableList.sort((a, b) => a.orderDate.compareTo(b.orderDate));
     return receivableList;
-  }
-
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      _fetchOrdersByStatus(
-    String status,
-    DateTime startDate,
-    DateTime endDate,
-  ) {
-    return _db
-        .collection('orders')
-        .where('status', isEqualTo: status)
-        .where('date', isGreaterThanOrEqualTo: startDate)
-        .where('date', isLessThan: endDate)
-        .get()
-        .then((snapshot) => snapshot.docs);
   }
 
   Future<List<ProductSalesData>> generateProductSalesReport({
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    final DateTime inclusiveStartDate =
-        DateTime(startDate.year, startDate.month, startDate.day);
-    final DateTime exclusiveEndDate =
-        DateTime(endDate.year, endDate.month, endDate.day)
-            .add(const Duration(days: 1));
-
-    const List<String> statusVariations = [
-      'processing',
-      'Processing',
-      'shipped',
-      'Shipped',
-      'delivered',
-      'Delivered',
-    ];
-    final List<Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>
-        futures = statusVariations
-            .map((status) => _fetchOrdersByStatus(
-                status, inclusiveStartDate, exclusiveEndDate))
-            .toList();
-
-    final List<List<QueryDocumentSnapshot>> results =
-        await Future.wait(futures);
-    final List<QueryDocumentSnapshot> allOrderDocs =
-        results.expand((docs) => docs).toList();
+    final query = _db
+        .collection('orders')
+        .where('status', whereIn: ['processing', 'success'])
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThan: endDate.add(const Duration(days: 1)));
+    
+    final allOrderDocs = await query.get();
 
     final productsSnapshot = await _db.collection('products').get();
-    final productsMap = {
-      for (var doc in productsSnapshot.docs) doc.id: Product.fromFirestore(doc)
-    };
+    final productsMap = { for (var doc in productsSnapshot.docs) doc.id: Product.fromFirestore(doc) };
 
     final salesAggregation = <String, int>{};
 
-    for (var orderDoc in allOrderDocs) {
-      final orderData = app_order.Order.fromFirestore(orderDoc);
+    for (var orderDoc in allOrderDocs.docs) {
+      final orderData = app_order.Order.fromFirestore(orderDoc as DocumentSnapshot<Map<String, dynamic>>);
       for (var productInOrder in orderData.products) {
-        salesAggregation.update(
-          productInOrder.productId,
-          (value) => value + productInOrder.quantity,
-          ifAbsent: () => productInOrder.quantity,
-        );
+        final productId = productInOrder['id'] as String?;
+        final quantity = (productInOrder['quantity'] as num? ?? 0).toInt();
+        if (productId != null) {
+          salesAggregation.update(productId, (value) => value + quantity, ifAbsent: () => quantity);
+        }
       }
     }
 
@@ -376,8 +251,7 @@ class ReportService {
     salesAggregation.forEach((productId, totalSold) {
       final product = productsMap[productId];
       if (product != null) {
-        reportData
-            .add(ProductSalesData(product: product, totalSold: totalSold));
+        reportData.add(ProductSalesData(product: product, totalSold: totalSold));
       }
     });
 
@@ -390,63 +264,33 @@ class ReportService {
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    final DateTime inclusiveStartDate =
-        DateTime(startDate.year, startDate.month, startDate.day);
-    final DateTime exclusiveEndDate =
-        DateTime(endDate.year, endDate.month, endDate.day)
-            .add(const Duration(days: 1));
+    final query = _db
+        .collection('orders')
+        .where('productIds', arrayContains: productId)
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThan: endDate.add(const Duration(days: 1)));
 
-    const List<String> statusVariations = [
-      'processing',
-      'Processing',
-      'shipped',
-      'Shipped',
-      'delivered',
-      'Delivered',
-    ];
-    final List<Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>>
-        futures = statusVariations
-            .map((status) => _db
-                .collection('orders')
-                .where('date',
-                    isGreaterThanOrEqualTo:
-                        inclusiveStartDate.subtract(const Duration(days: 90)))
-                .where('date', isLessThan: exclusiveEndDate)
-                .where('status', isEqualTo: status)
-                .get()
-                .then((snapshot) => snapshot.docs))
-            .toList();
-
-    final List<List<QueryDocumentSnapshot>> results =
-        await Future.wait(futures);
-    final List<QueryDocumentSnapshot> allOrderDocs =
-        results.expand((docs) => docs).toList();
-
+    final allOrderDocs = await query.get();
     final List<ProductSalesHistory> history = [];
 
-    for (var orderDoc in allOrderDocs) {
-      final orderData = app_order.Order.fromFirestore(orderDoc);
-
-      final DateTime transactionDate;
-      if (orderData.shippedAt != null) {
-        transactionDate = orderData.shippedAt!.toDate();
+    for (var orderDoc in allOrderDocs.docs) {
+      final orderData = app_order.Order.fromFirestore(orderDoc as DocumentSnapshot<Map<String, dynamic>>);
+      
+      DateTime transactionDate;
+      if (orderData.validatedAt != null) {
+        transactionDate = orderData.validatedAt!.toDate();
       } else {
         transactionDate = orderData.date.toDate();
       }
 
-      if (transactionDate.isBefore(inclusiveStartDate) ||
-          transactionDate.isAfter(exclusiveEndDate)) {
-        continue;
-      }
-
       for (var item in orderData.products) {
-        if (item.productId == productId) {
+        if (item['id'] == productId) {
           history.add(
             ProductSalesHistory(
               orderId: orderDoc.id,
-              customerName: orderData.customer,
+              customerName: orderData.customerDetails?['name'] ?? 'N/A',
               orderDate: transactionDate,
-              quantity: item.quantity,
+              quantity: (item['quantity'] as num? ?? 0).toInt(),
             ),
           );
         }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart'; // Import ini akan digunakan
 import 'package:ionicons/ionicons.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -14,24 +14,21 @@ class OrderDetailDialog extends ConsumerWidget {
 
   const OrderDetailDialog({super.key, required this.orderId});
 
+  // --- PERBAIKAN: Menambahkan fungsi helper lokal ---
   String _formatCurrency(double? amount) {
     if (amount == null) return 'Rp 0';
     final format = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
     return format.format(amount);
   }
-   double _parseTotal(String total) {
-    return double.tryParse(total.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
-  }
-
 
   String _formatDate(DateTime date) {
     return DateFormat('dd MMMM yyyy, HH:mm', 'id_ID').format(date);
   }
+  // ---------------------------------------------------
 
   Future<void> _printPdf(Order order) async {
     final pdf = pw.Document();
-    final total = _parseTotal(order.total);
-    final subtotal = total - (order.shippingFee ?? 0);
+    final total = order.total;
 
     pdf.addPage(pw.Page(
       pageFormat: PdfPageFormat.a4,
@@ -41,24 +38,28 @@ class OrderDetailDialog extends ConsumerWidget {
           children: [
             pw.Text('Faktur Pesanan', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 20),
-            pw.Text('ID Pesanan: ${order.id}'),
+            pw.Text('ID Pesanan: ${order.id ?? 'N/A'}'),
             pw.Text('Tanggal: ${_formatDate(order.date.toDate())}'),
             pw.Text('Status Pesanan: ${order.status}'),
             pw.Text('Status Pembayaran: ${order.paymentStatus}'),
             pw.Divider(height: 30, thickness: 2),
             pw.Text('Informasi Pelanggan:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-            pw.Text('Nama: ${order.customer}'),
+            pw.Text('Nama: ${order.customerDetails?['name'] ?? 'N/A'}'),
             pw.Divider(height: 30, thickness: 2),
             pw.Text('Rincian Produk:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 10),
             pw.TableHelper.fromTextArray(
               headers: ['Produk', 'Jumlah', 'Harga', 'Subtotal'],
-              data: order.products.map((p) => [
-                p.name,
-                p.quantity.toString(),
-                _formatCurrency(p.price),
-                _formatCurrency(p.price * p.quantity),
-              ]).toList(),
+              data: order.products.map((p) {
+                  final price = (p['price'] as num? ?? 0).toDouble();
+                  final quantity = (p['quantity'] as num? ?? 0).toInt();
+                  return [
+                    p['name'] as String? ?? 'N/A',
+                    quantity.toString(),
+                    _formatCurrency(price),
+                    _formatCurrency(price * quantity),
+                  ];
+              }).toList(),
             ),
              pw.Divider(height: 30, thickness: 2),
              pw.Row(
@@ -67,9 +68,7 @@ class OrderDetailDialog extends ConsumerWidget {
                  pw.Column(
                    crossAxisAlignment: pw.CrossAxisAlignment.end,
                    children: [
-                      pw.Text('Subtotal Produk: ${_formatCurrency(subtotal)}'),
-                      pw.Text('Biaya Pengiriman: ${_formatCurrency(order.shippingFee)}'),
-                      pw.SizedBox(height: 10),
+                      // PERBAIKAN: Hanya menampilkan total karena tidak ada subtotal/ongkir
                       pw.Text('Total: ${_formatCurrency(total)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
                    ]
                  )
@@ -97,29 +96,35 @@ class OrderDetailDialog extends ConsumerWidget {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (err, stack) => Center(child: Text('Gagal memuat detail pesanan: $err')),
           data: (order) {
-             final total = _parseTotal(order.total);
-             final subtotal = total - (order.shippingFee ?? 0);
+            final total = order.total;
+
             return SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ListTile(title: const Text('ID Pesanan'), subtitle: Text(order.id)),
-                  ListTile(title: const Text('Pelanggan'), subtitle: Text(order.customer)),
+                  ListTile(title: const Text('ID Pesanan'), subtitle: Text(order.id ?? 'N/A')),
+                  ListTile(title: const Text('Pelanggan'), subtitle: Text(order.customerDetails?['name'] ?? 'N/A')),
+                  // PERBAIKAN: Menggunakan helper _formatDate
                   ListTile(title: const Text('Tanggal'), subtitle: Text(_formatDate(order.date.toDate()))),
                   const Divider(),
                   const Text('Produk Dipesan', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ...order.products.map((p) => ListTile(
+                  ...order.products.map((p) {
+                      final imageUrl = p['image'] as String?;
+                      final name = p['name'] as String? ?? 'Produk tidak dikenal';
+                      final quantity = (p['quantity'] as num? ?? 0).toInt();
+                      final price = (p['price'] as num? ?? 0).toDouble();
+                      return ListTile(
                         leading: CircleAvatar(
-                          backgroundImage: p.imageUrl != null && p.imageUrl!.isNotEmpty ? NetworkImage(p.imageUrl!) : null,
-                          child: p.imageUrl == null || p.imageUrl!.isEmpty ? const Icon(Ionicons.cube_outline) : null,
+                          backgroundImage: imageUrl != null && imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+                          child: imageUrl == null || imageUrl.isEmpty ? const Icon(Ionicons.cube_outline) : null,
                         ),
-                        title: Text(p.name),
-                        subtitle: Text('${p.quantity} x ${_formatCurrency(p.price)}'),
-                        trailing: Text(_formatCurrency(p.quantity * p.price)),
-                      )),
+                        title: Text(name),
+                        subtitle: Text('$quantity x ${_formatCurrency(price)}'),
+                        trailing: Text(_formatCurrency(quantity * price)),
+                      );
+                  }),
                   const Divider(),
-                  ListTile(title: const Text('Subtotal'), trailing: Text(_formatCurrency(subtotal))),
-                  ListTile(title: const Text('Ongkir'), trailing: Text(_formatCurrency(order.shippingFee))),
+                  // PERBAIKAN: Menghapus ListTile untuk Subtotal dan Ongkir
                   ListTile(
                     title: const Text('Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                     trailing: Text(_formatCurrency(total), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
