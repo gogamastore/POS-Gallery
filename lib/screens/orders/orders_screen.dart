@@ -28,6 +28,12 @@ class OrdersScreen extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Penjualan'),
+        backgroundColor: Theme.of(context).cardColor,
+        foregroundColor: Theme.of(context).textTheme.titleLarge?.color,
+        elevation: 1,
+      ),
       backgroundColor: const Color(0xFFF8F9FA),
       body: SafeArea(
         child: Column(
@@ -79,7 +85,7 @@ class OrdersScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Pesanan',
+                  'Penjualan Hari Ini',
                   style: textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: const Color(0xFF2C3E50),
@@ -87,7 +93,7 @@ class OrdersScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Kelola pesanan yang sedang berjalan.',
+                  'Kelola Penjualan Anda dengan Mudah',
                   style: textTheme.bodySmall?.copyWith(
                     color: const Color(0xFF7F8C8D),
                   ),
@@ -140,9 +146,9 @@ class OrdersScreen extends ConsumerWidget {
     final counts = ref.watch(orderStatusCountsProvider);
 
     final statusFilters = [
-      {'key': 'pending', 'label': 'Belum Proses'},
-      {'key': 'processing', 'label': 'Perlu Dikirim'},
-      {'key': 'shipped', 'label': 'Dikirim'},
+      {'key': 'processing', 'label': 'Proses'},
+      {'key': 'success', 'label': 'Sukses'},
+      {'key': 'cancelled', 'label': 'Dibatalkan'},
     ];
 
     return Padding(
@@ -211,7 +217,8 @@ class OrdersScreen extends ConsumerWidget {
     );
   }
 
-  void _showProcessOrderDialog(BuildContext context, WidgetRef ref, Order order) {
+  void _showProcessOrderDialog(
+      BuildContext context, WidgetRef ref, Order order) {
     final formKey = GlobalKey<FormState>();
     String? selectedAdminName;
 
@@ -230,7 +237,8 @@ class OrdersScreen extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('Pilih nama Anda untuk melanjutkan proses validasi.'),
+                        const Text(
+                            'Pilih nama Anda untuk melanjutkan proses validasi.'),
                         const SizedBox(height: 24),
                         adminUsersAsyncValue.when(
                           data: (admins) => DropdownButtonFormField<String>(
@@ -240,7 +248,8 @@ class OrdersScreen extends ConsumerWidget {
                               border: OutlineInputBorder(),
                             ),
                             initialValue: selectedAdminName,
-                            items: admins.map<DropdownMenuItem<String>>((Staff admin) {
+                            items: admins
+                                .map<DropdownMenuItem<String>>((Staff admin) {
                               return DropdownMenuItem<String>(
                                 value: admin.name,
                                 child: Text(admin.name),
@@ -251,10 +260,12 @@ class OrdersScreen extends ConsumerWidget {
                                 selectedAdminName = newValue;
                               });
                             },
-                            validator: (value) =>
-                                value == null || value.isEmpty ? 'Harap pilih nama validator' : null,
+                            validator: (value) => value == null || value.isEmpty
+                                ? 'Harap pilih nama validator'
+                                : null,
                           ),
-                          loading: () => const Center(child: CircularProgressIndicator()),
+                          loading: () =>
+                              const Center(child: CircularProgressIndicator()),
                           error: (err, stack) =>
                               Center(child: Text('Gagal memuat admin: $err')),
                         ),
@@ -270,21 +281,30 @@ class OrdersScreen extends ConsumerWidget {
                       onPressed: () async {
                         if (formKey.currentState!.validate()) {
                           final navigator = Navigator.of(context);
-                          final scaffoldMessenger = ScaffoldMessenger.of(context);
+                          final scaffoldMessenger =
+                              ScaffoldMessenger.of(context);
                           try {
-                            await ref.read(orderServiceProvider).updateOrderStatus(order.id, 'processing');
-                            await ref.read(orderServiceProvider).setValidationTimestamp(order.id);
-                            await ref.read(orderServiceProvider).setOrderValidator(order.id, selectedAdminName!);
-                            
+                            await ref
+                                .read(orderServiceProvider)
+                                .updateOrderStatus(order.id, 'processing');
+                            await ref
+                                .read(orderServiceProvider)
+                                .setValidationTimestamp(order.id);
+                            await ref
+                                .read(orderServiceProvider)
+                                .setOrderValidator(
+                                    order.id, selectedAdminName!);
+
                             navigator.pop();
                             ref.read(orderProvider.notifier).refresh();
-
                           } catch (e) {
-                            if(navigator.canPop()){
+                            if (navigator.canPop()) {
                               navigator.pop();
                             }
                             scaffoldMessenger.showSnackBar(
-                              SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                              SnackBar(
+                                  content: Text('Error: $e'),
+                                  backgroundColor: Colors.red),
                             );
                           }
                         }
@@ -301,11 +321,11 @@ class OrdersScreen extends ConsumerWidget {
     );
   }
 
-
   Widget _buildOrderCard(BuildContext context, WidgetRef ref, Order order) {
     final currencyFormatter =
         NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-    final double totalValue = double.tryParse(order.total.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+    final double totalValue =
+        double.tryParse(order.total.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
 
     return GestureDetector(
       onTap: () {
@@ -443,40 +463,55 @@ class OrdersScreen extends ConsumerWidget {
                 padding: EdgeInsets.symmetric(vertical: 12.0),
                 child: Divider(thickness: 1, height: 1),
               ),
-               Row(
+              Row(
                 children: [
                   Expanded(
                     child: _buildPaymentButton(context, ref, order),
                   ),
                   const SizedBox(width: 8),
-                  if (order.status != 'pending' && order.status != 'processing' && order.status != 'shipped') 
+                  if (order.status != 'processing' &&
+                      order.status != 'success' &&
+                      order.status != 'cancelled')
                     const Spacer(),
-
-                  if (order.status == 'pending' || order.status == 'processing' || order.status == 'shipped')
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        if (order.status == 'pending') {
-                          _showProcessOrderDialog(context, ref, order);
-                        } else {
-                          final nextStatus = order.status == 'processing' ? 'shipped' : (order.status == 'shipped' ? 'delivered' : '');
-                          if (nextStatus.isNotEmpty) {
-                             ref.read(orderServiceProvider).updateOrderStatus(order.id, nextStatus).then((_) {
-                               ref.read(orderProvider.notifier).refresh();
-                             });
-                          } 
-                        }
-                      },
-                      icon: Icon(_getButtonIcon(order.status), color: Colors.white, size: 18),
-                      label: Text(_getButtonText(order.status), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _getButtonColor(order.status),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        elevation: 1,
+                  if (order.status == 'processing' ||
+                      order.status == 'success' ||
+                      order.status == 'cancelled')
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          if (order.status == 'pending') {
+                            _showProcessOrderDialog(context, ref, order);
+                          } else {
+                            final nextStatus = order.status == 'processing'
+                                ? 'shipped'
+                                : (order.status == 'shipped'
+                                    ? 'delivered'
+                                    : '');
+                            if (nextStatus.isNotEmpty) {
+                              ref
+                                  .read(orderServiceProvider)
+                                  .updateOrderStatus(order.id, nextStatus)
+                                  .then((_) {
+                                ref.read(orderProvider.notifier).refresh();
+                              });
+                            }
+                          }
+                        },
+                        icon: Icon(_getButtonIcon(order.status),
+                            color: Colors.white, size: 18),
+                        label: Text(_getButtonText(order.status),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _getButtonColor(order.status),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          elevation: 1,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ],
@@ -494,8 +529,8 @@ class OrdersScreen extends ConsumerWidget {
     if (isUnpaid) {
       return TextButton.icon(
         onPressed: () async {
-           final scaffoldMessenger = ScaffoldMessenger.of(context);
-           final navigator = Navigator.of(context);
+          final scaffoldMessenger = ScaffoldMessenger.of(context);
+          final navigator = Navigator.of(context);
 
           final bool? confirmed = await showDialog(
             context: context,
@@ -553,9 +588,9 @@ class OrdersScreen extends ConsumerWidget {
                 final scaffoldMessenger = ScaffoldMessenger.of(context);
                 if (!await launchUrl(url,
                     mode: LaunchMode.externalApplication)) {
-                    scaffoldMessenger.showSnackBar(
-                      const SnackBar(content: Text('Gagal membuka URL.')),
-                    );
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(content: Text('Gagal membuka URL.')),
+                  );
                 }
               }
             : null,
@@ -622,21 +657,18 @@ class OrdersScreen extends ConsumerWidget {
   IconData _getButtonIcon(String status) {
     switch (status) {
       case 'shipped':
-        return Ionicons.checkmark_done_circle; 
+        return Ionicons.checkmark_done_circle;
       default:
         return Ionicons.arrow_forward_circle_outline;
     }
   }
 
-
   String _getButtonText(String status) {
     switch (status) {
-      case 'pending':
-        return 'Proses Pesanan';
       case 'processing':
-        return 'Kirim Pesanan';
-      case 'shipped':
-        return 'Selesai';
+        return 'Proses Pesanan';
+      case 'success':
+        return 'Detail';
       default:
         return 'Detail';
     }
@@ -644,14 +676,10 @@ class OrdersScreen extends ConsumerWidget {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'delivered':
+      case 'success':
         return const Color(0xFF27AE60);
-      case 'shipped':
-        return const Color(0xFF3498DB);
       case 'processing':
         return const Color(0xFFF39C12);
-      case 'pending':
-        return const Color(0xFFE74C3C);
       case 'cancelled':
         return const Color(0xFF95A5A6);
       default:
@@ -661,14 +689,10 @@ class OrdersScreen extends ConsumerWidget {
 
   String _getStatusText(String status) {
     switch (status) {
-      case 'delivered':
+      case 'success':
         return 'Selesai';
-      case 'shipped':
-        return 'Dikirim';
       case 'processing':
         return 'Perlu Dikirim';
-      case 'pending':
-        return 'Belum Proses';
       case 'cancelled':
         return 'Dibatalkan';
       default:

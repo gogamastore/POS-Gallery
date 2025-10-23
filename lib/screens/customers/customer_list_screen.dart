@@ -3,11 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
 
-import '../../models/app_user.dart';
+import '../../models/customer.dart';
 import '../../providers/customer_provider.dart';
-import 'add_customer_screen.dart'; // Impor halaman baru
+import 'add_customer_screen.dart'; 
 
-// --- UBAH MENJADI STATEFUL WIDGET UNTUK PENCARIAN ---
 class CustomerListScreen extends ConsumerStatefulWidget {
   const CustomerListScreen({super.key});
 
@@ -35,7 +34,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
     super.dispose();
   }
 
-  void _showCustomerDetails(BuildContext context, AppUser user) {
+  void _showCustomerDetails(BuildContext context, Customer user) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -51,15 +50,9 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildDetailRow(Ionicons.at_outline, 'Email', user.email),
               if (user.whatsapp != null && user.whatsapp!.isNotEmpty)
                 _buildDetailRow(
                     Ionicons.logo_whatsapp, 'WhatsApp', user.whatsapp!),
-              if (user.role != null)
-                _buildDetailRow(Ionicons.ribbon_outline, 'Role', user.role!),
-              if (user.shopName != null)
-                _buildDetailRow(
-                    Ionicons.storefront_outline, 'Nama Toko', user.shopName!),
               if (user.address != null)
                 _buildDetailRow(
                     Ionicons.location_outline, 'Alamat', user.address!,
@@ -80,8 +73,8 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
           ),
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop(); // Close the dialog
-              Navigator.of(context).pop(user); // Return the selected user
+              Navigator.of(context).pop();
+              Navigator.of(context).pop(user); 
             },
             child: const Text('Pilih Customer'),
           ),
@@ -123,23 +116,20 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final customersAsync = ref.watch(customerListProvider);
+    final customersAsync = ref.watch(customerProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Daftar Customer'),
       ),
-      // --- TAMBAHKAN TOMBOL AKSI APUNG ---
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
-          // Navigasi ke halaman tambah dan tunggu hasilnya
           final bool? customerAdded =
               await Navigator.of(context).push<bool>(
             MaterialPageRoute(builder: (context) => const AddCustomerScreen()),
           );
-          // Jika customer berhasil ditambahkan, segarkan daftar
           if (customerAdded == true) {
-            ref.invalidate(customerListProvider);
+            ref.invalidate(customerProvider);
           }
         },
         label: const Text('Tambah Customer'),
@@ -147,7 +137,6 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
       ),
       body: Column(
         children: [
-          // --- TAMBAHKAN KOLOM PENCARIAN ---
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
@@ -170,7 +159,6 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
               error: (err, stack) =>
                   Center(child: Text('Gagal memuat data: $err')),
               data: (customers) {
-                // --- LOGIKA FILTER PENCARIAN ---
                 final filteredCustomers = customers.where((user) {
                   final name = user.name.toLowerCase();
                   final whatsapp = user.whatsapp?.toLowerCase() ?? '';
@@ -185,18 +173,14 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
 
                 return ListView.builder(
                   padding:
-                      const EdgeInsets.only(bottom: 80), // Padding untuk FAB
+                      const EdgeInsets.only(bottom: 80), 
                   itemCount: filteredCustomers.length,
                   itemBuilder: (context, index) {
                     final user = filteredCustomers[index];
                     return ListTile(
                       leading: CircleAvatar(
                         backgroundColor: Theme.of(context).primaryColorLight,
-                        child: user.photoURL != null &&
-                                user.photoURL!.isNotEmpty
-                            ? ClipOval(child: Image.network(user.photoURL!,
-                                fit: BoxFit.cover))
-                            : const Icon(Ionicons.person, color: Colors.white),
+                        child: const Icon(Ionicons.person, color: Colors.white),
                       ),
                       title: Text(user.name,
                           style: const TextStyle(fontWeight: FontWeight.bold)),

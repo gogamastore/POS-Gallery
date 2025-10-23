@@ -1,17 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/app_user.dart';
+import '../models/customer.dart';
 
-// Provider untuk mengambil dan mengurutkan semua data customer (users)
-final customerListProvider = FutureProvider<List<AppUser>>((ref) async {
-  final snapshot = await FirebaseFirestore.instance.collection('user').get();
-
-  // Ubah setiap dokumen menjadi objek AppUser
-  final users = snapshot.docs.map((doc) => AppUser.fromFirestore(doc)).toList();
-
-  // Urutkan daftar user berdasarkan nama (A-Z), case-insensitive
-  users.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-  return users;
+// Provider untuk mendapatkan stream daftar customer dari Firestore
+final customerProvider = StreamProvider<List<Customer>>((ref) {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  return _firestore.collection('customers').orderBy('name').snapshots().map((snapshot) {
+    return snapshot.docs.map((doc) => Customer.fromFirestore(doc)).toList();
+  });
 });
