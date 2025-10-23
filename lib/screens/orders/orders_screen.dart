@@ -1,517 +1,258 @@
+// lib/screens/orders/orders_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../../models/staff_model.dart';
-import '../../providers/order_provider.dart';
 import '../../models/order.dart';
-import '../../services/staff_service.dart';
-import './create_order_screen.dart';
-import './order_detail_screen.dart';
+import '../../providers/order_provider.dart';
+import 'order_detail_screen.dart';
+// PERBAIKAN: Import yang tidak ada dihapus.
+import '../../utils/formatter.dart';
 
 class OrdersScreen extends ConsumerWidget {
   const OrdersScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final currentFilter = ref.read(orderFilterProvider);
-      if (currentFilter == 'delivered' || currentFilter == 'cancelled') {
-        ref.read(orderFilterProvider.notifier).state = 'pending';
-      }
-    });
-
-    final ordersAsyncValue = ref.watch(orderProvider);
     final filteredOrders = ref.watch(filteredOrdersProvider);
-    final textTheme = Theme.of(context).textTheme;
+    final currentFilter = ref.watch(orderFilterProvider);
+
+    void onFilterChanged(String filter) {
+      ref.read(orderFilterProvider.notifier).state = filter;
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Penjualan'),
-        backgroundColor: Theme.of(context).cardColor,
-        foregroundColor: Theme.of(context).textTheme.titleLarge?.color,
-        elevation: 1,
+        title: const Text('Pesanan'),
+        centerTitle: true,
       ),
-      backgroundColor: const Color(0xFFF8F9FA),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context, textTheme),
-            _buildSearchBar(ref),
-            _buildFiltersContainer(context, ref),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () => ref.read(orderProvider.notifier).refresh(),
-                child: ordersAsyncValue.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (err, stack) =>
-                      Center(child: Text('Terjadi Kesalahan: $err')),
-                  data: (_) {
-                    if (filteredOrders.isEmpty) {
-                      final activeFilter = ref.watch(orderFilterProvider);
-                      final searchQuery = ref.watch(orderSearchQueryProvider);
-                      return _buildEmptyState(activeFilter, searchQuery);
-                    }
-                    return ListView.builder(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      itemCount: filteredOrders.length,
-                      itemBuilder: (context, index) {
-                        final order = filteredOrders[index];
-                        return _buildOrderCard(context, ref, order);
-                      },
+      body: Column(
+        children: [
+          _buildFilterChips(context, currentFilter, onFilterChanged),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async {
+                ref.invalidate(allOrdersProvider);
+                await ref.read(allOrdersProvider.future);
+              },
+              child: filteredOrders.when(
+                data: (orders) {
+                  if (orders.isEmpty) {
+                    // PERBAIKAN: Mengganti EmptyState dengan widget standar.
+                    return const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Ionicons.receipt_outline,
+                              size: 60, color: Colors.grey),
+                          SizedBox(height: 16),
+                          Text('Belum ada pesanan.',
+                              style:
+                                  TextStyle(fontSize: 16, color: Colors.grey)),
+                        ],
+                      ),
                     );
-                  },
+                  }
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    itemCount: orders.length,
+                    itemBuilder: (context, index) {
+                      final order = orders[index];
+                      return _OrderCard(order: order);
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                // PERBAIKAN: Mengganti ErrorState dengan widget standar.
+                error: (e, s) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Ionicons.cloud_offline_outline,
+                            size: 60, color: Colors.grey),
+                        const SizedBox(height: 16),
+                        Text(
+                            'Gagal memuat pesanan.\nCoba periksa koneksi internet Anda.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 16, color: Colors.grey)),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          icon: const Icon(Ionicons.refresh_outline),
+                          label: const Text('Coba Lagi'),
+                          onPressed: () => ref.invalidate(allOrdersProvider),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, TextTheme textTheme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Penjualan Hari Ini',
-                  style: textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF2C3E50),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Kelola Penjualan Anda dengan Mudah',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF7F8C8D),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CreateOrderScreen(),
-                ),
-              );
-            },
-            icon: const Icon(Ionicons.add_circle, size: 32),
-            tooltip: 'Buat Pesanan',
-            color: Theme.of(context).primaryColor,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSearchBar(WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: TextField(
-        onChanged: (value) {
-          ref.read(orderSearchQueryProvider.notifier).state = value;
-        },
-        decoration: InputDecoration(
-          hintText: 'Cari nama, No. Pesanan, atau SKU...',
-          prefixIcon: const Icon(Icons.search, color: Color(0xFF7F8C8D)),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-          isDense: true,
-        ),
-      ),
-    );
-  }
+  Widget _buildFilterChips(
+      BuildContext context, String currentFilter, ValueChanged<String> onTap) {
+    final filters = {
+      'Proses': 'processing',
+      'Berhasil': 'success',
+      'Dibatalkan': 'cancelled'
+    };
 
-  Widget _buildFiltersContainer(BuildContext context, WidgetRef ref) {
-    final activeFilter = ref.watch(orderFilterProvider);
-    final counts = ref.watch(orderStatusCountsProvider);
-
-    final statusFilters = [
-      {'key': 'processing', 'label': 'Proses'},
-      {'key': 'success', 'label': 'Sukses'},
-      {'key': 'cancelled', 'label': 'Dibatalkan'},
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: statusFilters.map((filter) {
-            final key = filter['key']!;
-            final label = filter['label']!;
-            final count = counts[key] ?? 0;
-            final isActive = activeFilter == key;
-
-            return GestureDetector(
-              onTap: () => ref.read(orderFilterProvider.notifier).state = key,
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isActive ? const Color(0xFF5DADE2) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: isActive
-                          ? const Color(0xFF5DADE2)
-                          : const Color(0xFFE0E6ED)),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color:
-                            isActive ? Colors.white : const Color(0xFF7F8C8D),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color:
-                            isActive ? Colors.white : const Color(0xFFF2F4F7),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        count.toString(),
-                        style: TextStyle(
-                          color: isActive
-                              ? const Color(0xFF5DADE2)
-                              : const Color(0xFF7F8C8D),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    )
-                  ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: filters.entries.map((entry) {
+          final isSelected = currentFilter == entry.value;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: ChoiceChip(
+              label: Text(entry.key),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) {
+                  onTap(entry.value);
+                }
+              },
+              selectedColor: Theme.of(context).primaryColor,
+              labelStyle: TextStyle(
+                color: isSelected
+                    ? Colors.white
+                    : Theme.of(context).textTheme.bodyLarge?.color,
+              ),
+              backgroundColor: Theme.of(context).cardColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: isSelected
+                      ? Theme.of(context).primaryColor
+                      : Colors.grey.shade300,
                 ),
               ),
-            );
-          }).toList(),
-        ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
+}
 
-  void _showProcessOrderDialog(
-      BuildContext context, WidgetRef ref, Order order) {
-    final formKey = GlobalKey<FormState>();
-    String? selectedAdminName;
+class _OrderCard extends StatelessWidget {
+  const _OrderCard({required this.order});
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Consumer(
-          builder: (context, ref, child) {
-            final adminUsersAsyncValue = ref.watch(adminUsersProvider);
-            return StatefulBuilder(
-              builder: (context, setState) {
-                return AlertDialog(
-                  title: const Text('Validasi Pesanan'),
-                  content: Form(
-                    key: formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                            'Pilih nama Anda untuk melanjutkan proses validasi.'),
-                        const SizedBox(height: 24),
-                        adminUsersAsyncValue.when(
-                          data: (admins) => DropdownButtonFormField<String>(
-                            hint: const Text('Pilih nama...'),
-                            decoration: const InputDecoration(
-                              labelText: 'Di Validasi oleh',
-                              border: OutlineInputBorder(),
-                            ),
-                            initialValue: selectedAdminName,
-                            items: admins
-                                .map<DropdownMenuItem<String>>((Staff admin) {
-                              return DropdownMenuItem<String>(
-                                value: admin.name,
-                                child: Text(admin.name),
-                              );
-                            }).toList(),
-                            onChanged: (String? newValue) {
-                              setState(() {
-                                selectedAdminName = newValue;
-                              });
-                            },
-                            validator: (value) => value == null || value.isEmpty
-                                ? 'Harap pilih nama validator'
-                                : null,
-                          ),
-                          loading: () =>
-                              const Center(child: CircularProgressIndicator()),
-                          error: (err, stack) =>
-                              Center(child: Text('Gagal memuat admin: $err')),
-                        ),
-                      ],
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Batal'),
-                    ),
-                    TextButton(
-                      onPressed: () async {
-                        if (formKey.currentState!.validate()) {
-                          final navigator = Navigator.of(context);
-                          final scaffoldMessenger =
-                              ScaffoldMessenger.of(context);
-                          try {
-                            await ref
-                                .read(orderServiceProvider)
-                                .updateOrderStatus(order.id, 'processing');
-                            await ref
-                                .read(orderServiceProvider)
-                                .setValidationTimestamp(order.id);
-                            await ref
-                                .read(orderServiceProvider)
-                                .setOrderValidator(
-                                    order.id, selectedAdminName!);
+  final Order order;
 
-                            navigator.pop();
-                            ref.read(orderProvider.notifier).refresh();
-                          } catch (e) {
-                            if (navigator.canPop()) {
-                              navigator.pop();
-                            }
-                            scaffoldMessenger.showSnackBar(
-                              SnackBar(
-                                  content: Text('Error: $e'),
-                                  backgroundColor: Colors.red),
-                            );
-                          }
-                        }
-                      },
-                      child: const Text('Ya'),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
+  @override
+  Widget build(BuildContext context) {
+    // PERBAIKAN: Menghapus garis bawah dari nama fungsi lokal.
+    String getButtonText() {
+      return 'Detail';
+    }
 
-  Widget _buildOrderCard(BuildContext context, WidgetRef ref, Order order) {
-    final currencyFormatter =
-        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-    final double totalValue =
-        double.tryParse(order.total.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+    Color getStatusColor(String status) {
+      switch (status.toLowerCase()) {
+        case 'success':
+          return const Color(0xFF27AE60);
+        case 'cancelled':
+          return const Color(0xFF95A5A6);
+        default:
+          return const Color(0xFFF39C12);
+      }
+    }
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => OrderDetailScreen(orderId: order.id),
-          ),
-        ).then((_) => ref.read(orderProvider.notifier).refresh());
-      },
-      child: Card(
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        elevation: 2,
-        shadowColor: Colors.black.withAlpha(25),
+    return Card(
+      elevation: 2.0,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => OrderDetailScreen(orderId: order.id!),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Flexible(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(order.customer,
-                            style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF2C3E50)),
-                            overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 2),
-                        Text('No. Pesanan ${order.id}',
-                            style: const TextStyle(
-                                fontSize: 12, color: Color(0xFF7F8C8D))),
-                        const SizedBox(height: 2),
-                        Text(
-                            DateFormat('dd/MM/yy, HH:mm')
-                                .format(order.date.toDate()),
-                            style: const TextStyle(
-                                fontSize: 12, color: Color(0xFF7F8C8D))),
-                      ],
+                  Text(
+                    'ID: ${order.id?.substring(0, 8) ?? 'N/A'}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
                   ),
                   Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _getStatusColor(order.status).withAlpha(33),
-                      borderRadius: BorderRadius.circular(12),
+                      color: getStatusColor(order.status),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      _getStatusText(order.status),
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: _getStatusColor(order.status)),
+                      order.status.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              if (order.products.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(left: 4.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ...order.products.take(2).map((p) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4.0),
-                            child: Text('• ${p.name} (${p.quantity}x)',
-                                style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Color(0xFF34495E),
-                                    height: 1.4),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1),
-                          )),
-                      if (order.products.length > 2)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2.0),
-                          child: Text(
-                              '... dan ${order.products.length - 2} produk lainnya',
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF7F8C8D),
-                                  fontStyle: FontStyle.italic)),
-                        ),
-                    ],
-                  ),
-                ),
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 8),
+              _buildInfoRow(Ionicons.person_outline, 'Pelanggan',
+                  order.customerDetails?['name'] ?? 'N/A'),
+              const SizedBox(height: 8),
+              _buildInfoRow(
+                  Ionicons.calendar_outline,
+                  'Tanggal',
+                  DateFormat('d MMMM y, HH:mm', 'id_ID')
+                      .format(order.date.toDate())),
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _getPaymentStatusColor(order.paymentStatus)),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(_getPaymentStatusText(order.paymentStatus),
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  _getPaymentStatusColor(order.paymentStatus))),
-                    ],
+                  Text(
+                    formatCurrency(order.total),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.deepPurple,
+                    ),
                   ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      const Text('Total Pesanan',
-                          style: TextStyle(
-                              fontSize: 13, color: Color(0xFF7F8C8D))),
-                      const SizedBox(height: 2),
-                      Text(currencyFormatter.format(totalValue),
-                          style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF2C3E50))),
-                    ],
-                  ),
-                ],
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12.0),
-                child: Divider(thickness: 1, height: 1),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildPaymentButton(context, ref, order),
-                  ),
-                  const SizedBox(width: 8),
-                  if (order.status != 'processing' &&
-                      order.status != 'success' &&
-                      order.status != 'cancelled')
-                    const Spacer(),
-                  if (order.status == 'processing' ||
-                      order.status == 'success' ||
-                      order.status == 'cancelled')
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          if (order.status == 'pending') {
-                            _showProcessOrderDialog(context, ref, order);
-                          } else {
-                            final nextStatus = order.status == 'processing'
-                                ? 'shipped'
-                                : (order.status == 'shipped'
-                                    ? 'delivered'
-                                    : '');
-                            if (nextStatus.isNotEmpty) {
-                              ref
-                                  .read(orderServiceProvider)
-                                  .updateOrderStatus(order.id, nextStatus)
-                                  .then((_) {
-                                ref.read(orderProvider.notifier).refresh();
-                              });
-                            }
-                          }
-                        },
-                        icon: Icon(_getButtonIcon(order.status),
-                            color: Colors.white, size: 18),
-                        label: Text(_getButtonText(order.status),
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _getButtonColor(order.status),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          elevation: 1,
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              OrderDetailScreen(orderId: order.id!),
                         ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
+                    child: Text(getButtonText()),
+                  ),
                 ],
               ),
             ],
@@ -521,208 +262,23 @@ class OrdersScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildPaymentButton(BuildContext context, WidgetRef ref, Order order) {
-    final bool isUnpaid = order.paymentStatus.toLowerCase() == 'unpaid';
-    final bool hasProof =
-        order.paymentProofUrl != null && order.paymentProofUrl!.isNotEmpty;
-
-    if (isUnpaid) {
-      return TextButton.icon(
-        onPressed: () async {
-          final scaffoldMessenger = ScaffoldMessenger.of(context);
-          final navigator = Navigator.of(context);
-
-          final bool? confirmed = await showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Konfirmasi Pelunasan'),
-              content:
-                  const Text('Apakah pesanan ini sudah benar-benar lunas?'),
-              actions: [
-                TextButton(
-                  onPressed: () => navigator.pop(false),
-                  child: const Text('Batal'),
-                ),
-                TextButton(
-                  onPressed: () => navigator.pop(true),
-                  child: const Text('Ya, Lunas',
-                      style: TextStyle(color: Colors.green)),
-                ),
-              ],
-            ),
-          );
-
-          if (confirmed == true) {
-            try {
-              await ref.read(orderServiceProvider).markOrderAsPaid(order.id);
-              ref.read(orderProvider.notifier).refresh();
-              scaffoldMessenger.showSnackBar(
-                const SnackBar(
-                    content: Text('Pesanan ditandai lunas.'),
-                    backgroundColor: Colors.green),
-              );
-            } catch (e) {
-              scaffoldMessenger.showSnackBar(
-                SnackBar(
-                    content: Text('Gagal memperbarui: $e'),
-                    backgroundColor: Colors.red),
-              );
-            }
-          }
-        },
-        icon: const Icon(Ionicons.checkmark_circle,
-            color: Color(0xFF27AE60), size: 18),
-        label: const Text('Tandai Lunas',
-            style: TextStyle(
-                fontWeight: FontWeight.bold, color: Color(0xFF27AE60))),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey.shade600),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: TextStyle(color: Colors.grey.shade600),
         ),
-      );
-    } else {
-      return TextButton.icon(
-        onPressed: hasProof
-            ? () async {
-                final Uri url = Uri.parse(order.paymentProofUrl!);
-                final scaffoldMessenger = ScaffoldMessenger.of(context);
-                if (!await launchUrl(url,
-                    mode: LaunchMode.externalApplication)) {
-                  scaffoldMessenger.showSnackBar(
-                    const SnackBar(content: Text('Gagal membuka URL.')),
-                  );
-                }
-              }
-            : null,
-        icon: Icon(Ionicons.receipt_outline,
-            color: hasProof ? const Color(0xFF3498DB) : Colors.grey, size: 18),
-        label: Text('Bukti Bayar',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: hasProof ? const Color(0xFF3498DB) : Colors.grey)),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      );
-    }
-  }
-
-  Widget _buildEmptyState(String activeFilter, String searchQuery) {
-    final bool isSearching = searchQuery.isNotEmpty;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isSearching
-                  ? Ionicons.search_outline
-                  : Ionicons.file_tray_outline,
-              size: 64,
-              color: const Color(0xFFBDC3C7),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isSearching ? 'Tidak Ada Hasil' : 'Tidak Ada Pesanan',
-              style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50)),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              isSearching
-                  ? 'Tidak ditemukan pesanan yang cocok dengan "$searchQuery".'
-                  : 'Saat ini tidak ada pesanan untuk kategori \'${_getStatusText(activeFilter)}\'.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, color: Color(0xFF7F8C8D)),
-            ),
-          ],
-        ),
-      ),
+      ],
     );
-  }
-
-  Color _getButtonColor(String status) {
-    switch (status) {
-      case 'shipped':
-        return const Color(0xFF27AE60); // Green for 'Selesai'
-      default:
-        return const Color(0xFF5DADE2); // Default blue
-    }
-  }
-
-  IconData _getButtonIcon(String status) {
-    switch (status) {
-      case 'shipped':
-        return Ionicons.checkmark_done_circle;
-      default:
-        return Ionicons.arrow_forward_circle_outline;
-    }
-  }
-
-  String _getButtonText(String status) {
-    switch (status) {
-      case 'processing':
-        return 'Proses Pesanan';
-      case 'success':
-        return 'Detail';
-      default:
-        return 'Detail';
-    }
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'success':
-        return const Color(0xFF27AE60);
-      case 'processing':
-        return const Color(0xFFF39C12);
-      case 'cancelled':
-        return const Color(0xFF95A5A6);
-      default:
-        return const Color(0xFF7F8C8D);
-    }
-  }
-
-  String _getStatusText(String status) {
-    switch (status) {
-      case 'success':
-        return 'Selesai';
-      case 'processing':
-        return 'Perlu Dikirim';
-      case 'cancelled':
-        return 'Dibatalkan';
-      default:
-        return status;
-    }
-  }
-
-  Color _getPaymentStatusColor(String? status) {
-    switch (status?.toLowerCase()) {
-      case 'paid':
-        return const Color(0xFF27AE60);
-      case 'unpaid':
-        return const Color(0xFFE74C3C);
-      case 'partial':
-        return const Color(0xFFF39C12);
-      default:
-        return const Color(0xFF7F8C8D);
-    }
-  }
-
-  String _getPaymentStatusText(String? status) {
-    switch (status?.toLowerCase()) {
-      case 'paid':
-        return 'Lunas';
-      case 'unpaid':
-        return 'Belum Lunas';
-      case 'partial':
-        return 'Sebagian';
-      default:
-        return 'N/A';
-    }
   }
 }

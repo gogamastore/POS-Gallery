@@ -11,9 +11,10 @@ class OrderListScreen extends ConsumerStatefulWidget {
   ConsumerState<OrderListScreen> createState() => _OrderListScreenState();
 }
 
-class _OrderListScreenState extends ConsumerState<OrderListScreen> with SingleTickerProviderStateMixin {
+class _OrderListScreenState extends ConsumerState<OrderListScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _statuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+  final List<String> _statuses = ['processing', 'success', 'cancelled'];
 
   @override
   void initState() {
@@ -30,10 +31,10 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     final statusOrderCounts = ref.watch(orderStatusCountsProvider);
-    
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pesanan'),
+        title: const Text('Penjualan'),
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
