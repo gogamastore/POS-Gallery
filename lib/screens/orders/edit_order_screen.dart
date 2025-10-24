@@ -34,12 +34,14 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
         name: p['name'] as String,
         quantity: p['quantity'] as int,
         price: (p['price'] as num).toDouble(),
-        imageUrl: p['image'] as String?,
+        // PERBAIKAN: Membaca 'imageUrl'
+        imageUrl: p['imageUrl'] as String?,
         sku: p['sku'] as String?,
       ));
     }
-    _subtotal = widget.order.subtotal;
-    _total = widget.order.total;
+    // PERBAIKAN: Mengonversi num ke double
+    _subtotal = widget.order.subtotal.toDouble();
+    _total = widget.order.total.toDouble();
   }
 
   void _updateTotals() {
@@ -78,14 +80,10 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
     _updateTotals();
   }
 
-  // --- PERBAIKAN FINAL PADA METODE INI ---
   void _editItem(OrderItem item) async {
-    // Diasumsikan dialog mengembalikan Map dengan nilai baru jika ada perubahan.
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
-        // PERBAIKAN: Mengirim 'OrderItem' ke parameter bernama 'product'
-        // sesuai dengan petunjuk dari kombinasi error yang ada.
         return EditOrderItemDialog(product: item);
       },
     );

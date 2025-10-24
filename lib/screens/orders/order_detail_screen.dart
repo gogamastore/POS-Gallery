@@ -77,8 +77,9 @@ class OrderDetailScreen extends ConsumerWidget {
                     _buildDetailRow('Metode Pembayaran', order.paymentMethod),
                     _buildDetailRow('Status Pembayaran', order.paymentStatus),
                     const Divider(height: 20),
-                    _buildTotalRow('Subtotal', formatCurrency(order.subtotal)),
-                    _buildTotalRow('Total', formatCurrency(order.total),
+                    // PERBAIKAN: Mengonversi num ke double
+                    _buildTotalRow('Subtotal', formatCurrency(order.subtotal.toDouble())),
+                    _buildTotalRow('Total', formatCurrency(order.total.toDouble()),
                         isTotal: true),
                   ],
                 ),
@@ -146,7 +147,6 @@ class OrderDetailScreen extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // PERBAIKAN: Menghapus 'const' dari TextStyle.
           Text(label, style: TextStyle(color: Colors.grey.shade600)),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
         ],
@@ -174,18 +174,19 @@ class OrderDetailScreen extends ConsumerWidget {
   }
 
   Widget _buildProductTile(Map<String, dynamic> product) {
+    // PERBAIKAN: Membaca 'imageUrl'
+    final imageUrl = product['imageUrl'] as String?;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading:
-          product['image'] != null && (product['image'] as String).isNotEmpty
+          imageUrl != null && imageUrl.isNotEmpty
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(
-                    product['image'],
+                    imageUrl,
                     width: 50,
                     height: 50,
                     fit: BoxFit.cover,
-                    // PERBAIKAN: Menghapus 'const' dari Icon.
                     errorBuilder: (context, error, stackTrace) =>
                         const Icon(Ionicons.image_outline, size: 50),
                   ),
@@ -193,7 +194,7 @@ class OrderDetailScreen extends ConsumerWidget {
               : const Icon(Ionicons.cube_outline, size: 40),
       title: Text(product['name'] ?? 'Nama Produk Tidak Ada'),
       subtitle:
-          Text('${product['quantity']} x ${formatCurrency(product['price'])}'),
+          Text('${product['quantity']} x ${formatCurrency((product['price'] as num).toDouble())}'),
       trailing: Text(
         formatCurrency((product['quantity'] as int) *
             (product['price'] as num).toDouble()),
@@ -211,7 +212,6 @@ class OrderDetailScreen extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // PERBAIKAN: Menghapus 'const' dari TextStyle.
           Text('WhatsApp', style: TextStyle(color: Colors.grey.shade600)),
           TextButton.icon(
             icon: const Icon(Ionicons.logo_whatsapp, size: 18),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart'; // Import ini akan digunakan
+import 'package:intl/intl.dart'; 
 import 'package:ionicons/ionicons.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -14,7 +14,6 @@ class OrderDetailDialog extends ConsumerWidget {
 
   const OrderDetailDialog({super.key, required this.orderId});
 
-  // --- PERBAIKAN: Menambahkan fungsi helper lokal ---
   String _formatCurrency(double? amount) {
     if (amount == null) return 'Rp 0';
     final format = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
@@ -24,11 +23,11 @@ class OrderDetailDialog extends ConsumerWidget {
   String _formatDate(DateTime date) {
     return DateFormat('dd MMMM yyyy, HH:mm', 'id_ID').format(date);
   }
-  // ---------------------------------------------------
 
   Future<void> _printPdf(Order order) async {
     final pdf = pw.Document();
-    final total = order.total;
+    // PERBAIKAN: Mengonversi num ke double
+    final total = order.total.toDouble();
 
     pdf.addPage(pw.Page(
       pageFormat: PdfPageFormat.a4,
@@ -68,7 +67,6 @@ class OrderDetailDialog extends ConsumerWidget {
                  pw.Column(
                    crossAxisAlignment: pw.CrossAxisAlignment.end,
                    children: [
-                      // PERBAIKAN: Hanya menampilkan total karena tidak ada subtotal/ongkir
                       pw.Text('Total: ${_formatCurrency(total)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
                    ]
                  )
@@ -96,7 +94,8 @@ class OrderDetailDialog extends ConsumerWidget {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (err, stack) => Center(child: Text('Gagal memuat detail pesanan: $err')),
           data: (order) {
-            final total = order.total;
+            // PERBAIKAN: Mengonversi num ke double
+            final total = order.total.toDouble();
 
             return SingleChildScrollView(
               child: Column(
@@ -104,12 +103,12 @@ class OrderDetailDialog extends ConsumerWidget {
                 children: [
                   ListTile(title: const Text('ID Pesanan'), subtitle: Text(order.id ?? 'N/A')),
                   ListTile(title: const Text('Pelanggan'), subtitle: Text(order.customerDetails?['name'] ?? 'N/A')),
-                  // PERBAIKAN: Menggunakan helper _formatDate
                   ListTile(title: const Text('Tanggal'), subtitle: Text(_formatDate(order.date.toDate()))),
                   const Divider(),
                   const Text('Produk Dipesan', style: TextStyle(fontWeight: FontWeight.bold)),
                   ...order.products.map((p) {
-                      final imageUrl = p['image'] as String?;
+                      // PERBAIKAN: Membaca 'imageUrl'
+                      final imageUrl = p['imageUrl'] as String?;
                       final name = p['name'] as String? ?? 'Produk tidak dikenal';
                       final quantity = (p['quantity'] as num? ?? 0).toInt();
                       final price = (p['price'] as num? ?? 0).toDouble();
@@ -124,7 +123,6 @@ class OrderDetailDialog extends ConsumerWidget {
                       );
                   }),
                   const Divider(),
-                  // PERBAIKAN: Menghapus ListTile untuk Subtotal dan Ongkir
                   ListTile(
                     title: const Text('Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                     trailing: Text(_formatCurrency(total), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),

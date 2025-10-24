@@ -80,19 +80,12 @@ class StockService {
     return calculatedMovements;
   }
 
+  // --- PERBAIKAN UTAMA DI FUNGSI INI ---
   Future<List<StockMovement>> _getSalesMovements(String productId) async {
-    const List<String> statusVariations = [
-      'Pending', 'pending',
-      'processing', 'Processing',
-      'shipped', 'Shipped',
-      'delivered', 'Delivered',
-      'completed', 'Completed'
-    ];
-
+    // Menghapus `where('productIds', ...)` dan memfilter berdasarkan status 'success' saja.
     final querySnapshot = await _db
         .collection('orders')
-        .where('productIds', arrayContains: productId)
-        .where('status', whereIn: statusVariations)
+        .where('status', isEqualTo: 'success')
         .orderBy('date', descending: true)
         .get();
 
@@ -120,11 +113,12 @@ class StockService {
     return movements;
   }
 
+  // --- PERBAIKAN UTAMA DI FUNGSI INI ---
   Future<List<StockMovement>> _getCancellationMovements(String productId) async {
+    // Menghapus `where('productIds', ...)` dan memfilter berdasarkan status 'cancelled'.
     final querySnapshot = await _db
         .collection('orders')
-        .where('productIds', arrayContains: productId)
-        .where('status', whereIn: ['Cancelled', 'cancelled']) 
+        .where('status', isEqualTo: 'cancelled')
         .orderBy('date', descending: true)
         .get();
 

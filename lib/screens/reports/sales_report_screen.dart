@@ -4,11 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:ionicons/ionicons.dart';
 
-import '../../models/sales_report_data.dart';
+import '../../models/order.dart' as app_order; // PERBAIKAN: Menambahkan prefiks
 import '../../providers/sales_report_provider.dart';
 import '../../providers/product_images_provider.dart';
-import '../../providers/user_provider.dart'; // DIIMPOR
-import '../../models/user_model.dart'; // DIIMPOR
+import '../../providers/user_provider.dart'; 
+import '../../models/user_model.dart';
 import '../../utils/formatter.dart' as formatter;
 
 class SalesReportScreen extends ConsumerStatefulWidget {
@@ -47,7 +47,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(salesReportProvider);
     final notifier = ref.read(salesReportProvider.notifier);
-    final userData = ref.watch(userDataProvider); // DITAMBAHKAN
+    final userData = ref.watch(userDataProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -76,9 +76,9 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
               userData.when(
                 data: (user) => _buildMetrics(state.reportData!, user),
                 loading: () =>
-                    const SizedBox.shrink(), // Atau widget loading kecil
+                    const SizedBox.shrink(), 
                 error: (err, stack) =>
-                    const SizedBox.shrink(), // Sembunyikan jika error
+                    const SizedBox.shrink(),
               ),
               const SizedBox(height: 16),
               _buildTrendsCard(state.reportData!),
@@ -127,7 +127,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                   prefixIcon: const Icon(Ionicons.calendar_outline),
                   border: const OutlineInputBorder(),
                   filled: state.activeFilter == SalesReportFilterType.custom,
-                  fillColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                  fillColor: Theme.of(context).primaryColor.withAlpha((255 * 0.1).round()), // PERBAIKAN: Menggunakan withAlpha
                 ),
                 child: Text(
                   state.selectedDateRange == null
@@ -163,9 +163,12 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
     );
   }
 
-  Widget _buildMetrics(SalesReportData data, UserModel? user) {
+  Widget _buildMetrics(List<app_order.Order> data, UserModel? user) { // PERBAIKAN: Menggunakan prefiks
     final bool canViewFinancials =
         user != null && (user.position == 'Admin' || user.position == 'Owner');
+    
+    final totalRevenue = data.fold<double>(0, (sum, order) => sum + order.total.toDouble());
+    const grossProfit = 0.0; 
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -176,7 +179,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
               Expanded(
                 child: _buildMetricCard(
                   'Total Penjualan',
-                  formatter.formatCurrency(data.totalRevenue),
+                  formatter.formatCurrency(totalRevenue),
                   Ionicons.cash_outline,
                   color: Colors.blue.shade700,
                 ),
@@ -185,7 +188,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
               Expanded(
                 child: _buildMetricCard(
                   'Laba Kotor',
-                  formatter.formatCurrency(data.grossProfit),
+                  formatter.formatCurrency(grossProfit),
                   Ionicons.wallet_outline,
                   color: Colors.green.shade700,
                 ),
@@ -195,7 +198,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
         if (canViewFinancials) const SizedBox(height: 12),
         _buildMetricCard(
           'Total Pesanan',
-          data.orders.length.toString(),
+          data.length.toString(),
           Ionicons.document_text_outline,
         ),
       ],
@@ -247,13 +250,13 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
     );
   }
 
-  Widget _buildTrendsCard(SalesReportData data) {
+  Widget _buildTrendsCard(List<app_order.Order> data) { // PERBAIKAN: Menggunakan prefiks
     final Map<DateTime, double> dailyTotals = {};
-    for (var order in data.orders) {
-      final date = DateTime(order.orderDate.toDate().year,
-          order.orderDate.toDate().month, order.orderDate.toDate().day);
-      dailyTotals.update(date, (value) => value + order.totalRevenue,
-          ifAbsent: () => order.totalRevenue);
+    for (var order in data) {
+      final date = DateTime(order.date.toDate().year,
+          order.date.toDate().month, order.date.toDate().day);
+      dailyTotals.update(date, (value) => value + order.total.toDouble(),
+          ifAbsent: () => order.total.toDouble());
     }
 
     final spots = dailyTotals.entries.map((entry) {
@@ -359,7 +362,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
     );
   }
 
-  Widget _buildTransactionsTable(SalesReportData data) {
+  Widget _buildTransactionsTable(List<app_order.Order> data) { // PERBAIKAN: Menggunakan prefiks
     return Card(
       elevation: 1,
       clipBehavior: Clip.antiAlias,
@@ -378,7 +381,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
               DataColumn(label: Text('Total'), numeric: true),
               DataColumn(label: Text('Status')),
             ],
-            rows: data.orders.map((order) {
+            rows: data.map((order) {
               return DataRow(
                 onSelectChanged: (isSelected) {
                   if (isSelected ?? false) {
@@ -387,10 +390,10 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                 },
                 cells: [
                   DataCell(Text(DateFormat('dd MMM yyyy')
-                      .format(order.orderDate.toDate()))),
-                  DataCell(Text(order.customerName,
+                      .format(order.date.toDate()))),
+                  DataCell(Text(order.customerDetails?['name'] ?? 'N/A',
                       overflow: TextOverflow.ellipsis)),
-                  DataCell(Text(formatter.formatCurrency(order.totalRevenue))),
+                  DataCell(Text(formatter.formatCurrency(order.total.toDouble()))),
                   DataCell(Text(_translateStatus(order.status))),
                 ],
               );
@@ -403,18 +406,18 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
 
   String _translateStatus(String status) {
     switch (status) {
-      case 'Processing':
-        return 'Perlu Dikirim';
-      case 'Shipped':
+      case 'processing':
+        return 'Proses';
+      case 'success':
         return 'Selesai';
-      case 'Delivered':
-        return 'Dikirim';
+      case 'cancelled':
+        return 'Dibatalkan';
       default:
         return status;
     }
   }
 
-  void _showInvoiceDialog(BuildContext context, SalesReportOrder order) {
+  void _showInvoiceDialog(BuildContext context, app_order.Order order) { // PERBAIKAN: Menggunakan prefiks
     final images = ref.watch(productImagesProvider);
 
     String getPaymentStatusText(String status) {
@@ -460,7 +463,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                               .textTheme
                               .headlineSmall
                               ?.copyWith(fontWeight: FontWeight.bold)),
-                      Text('#${order.orderId}',
+                      Text('#${order.id}',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
@@ -469,8 +472,8 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                                   overflow: TextOverflow.ellipsis)),
                       const SizedBox(height: 16),
                       Text(
-                          'Tanggal: ${DateFormat('dd MMMM yyyy').format(order.orderDate.toDate())}'),
-                      Text('Pelanggan: ${order.customerName}'),
+                          'Tanggal: ${DateFormat('dd MMMM yyyy').format(order.date.toDate())}'),
+                      Text('Pelanggan: ${order.customerDetails?['name'] ?? 'N/A'}'),
                       const SizedBox(height: 4),
                       Row(
                         children: [
@@ -524,8 +527,11 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                                     DataColumn(
                                         label: Text('Subtotal'), numeric: true),
                                   ],
-                                  rows: order.items.map((item) {
-                                    final imageUrl = imageMap[item.productId];
+                                  rows: order.products.map((item) {
+                                    final imageUrl = imageMap[item['productId']];
+                                    final price = (item['price'] as num).toDouble();
+                                    final quantity = (item['quantity'] as int);
+                                    final totalSale = price * quantity;
                                     return DataRow(
                                       cells: [
                                         DataCell(
@@ -555,7 +561,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                                                 const SizedBox(width: 8),
                                                 Flexible(
                                                     child: Text(
-                                                        item.productName,
+                                                        item['name'] ?? '',
                                                         style: const TextStyle(
                                                             fontSize: 10),
                                                         maxLines: 2,
@@ -565,17 +571,17 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                                             ),
                                           ),
                                         ),
-                                        DataCell(Text(item.quantity.toString(),
+                                        DataCell(Text(quantity.toString(),
                                             style:
                                                 const TextStyle(fontSize: 10))),
                                         DataCell(Text(
                                             formatter
-                                                .formatCurrency(item.salePrice),
+                                                .formatCurrency(price),
                                             style:
                                                 const TextStyle(fontSize: 10))),
                                         DataCell(Text(
                                             formatter
-                                                .formatCurrency(item.totalSale),
+                                                .formatCurrency(totalSale),
                                             style:
                                                 const TextStyle(fontSize: 10))),
                                       ],
@@ -589,11 +595,11 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                       ),
                       const Divider(height: 24),
                       _buildDialogTotalRow(context, 'Total Penjualan',
-                          formatter.formatCurrency(order.totalRevenue)),
+                          formatter.formatCurrency(order.total.toDouble())),
                       _buildDialogTotalRow(context, 'Total Pokok (HPP)',
-                          formatter.formatCurrency(order.totalCogs)),
+                          formatter.formatCurrency(0)),
                       _buildDialogTotalRow(context, 'Laba Kotor',
-                          formatter.formatCurrency(order.grossProfit),
+                          formatter.formatCurrency(0),
                           isProfit: true),
                     ],
                   ),

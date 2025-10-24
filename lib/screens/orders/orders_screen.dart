@@ -1,5 +1,3 @@
-// lib/screens/orders/orders_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -8,7 +6,6 @@ import 'package:ionicons/ionicons.dart';
 import '../../models/order.dart';
 import '../../providers/order_provider.dart';
 import 'order_detail_screen.dart';
-// PERBAIKAN: Import yang tidak ada dihapus.
 import '../../utils/formatter.dart';
 
 class OrdersScreen extends ConsumerWidget {
@@ -40,7 +37,6 @@ class OrdersScreen extends ConsumerWidget {
               child: filteredOrders.when(
                 data: (orders) {
                   if (orders.isEmpty) {
-                    // PERBAIKAN: Mengganti EmptyState dengan widget standar.
                     return const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -65,7 +61,6 @@ class OrdersScreen extends ConsumerWidget {
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                // PERBAIKAN: Mengganti ErrorState dengan widget standar.
                 error: (e, s) => Center(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -75,7 +70,7 @@ class OrdersScreen extends ConsumerWidget {
                         const Icon(Ionicons.cloud_offline_outline,
                             size: 60, color: Colors.grey),
                         const SizedBox(height: 16),
-                        Text(
+                        const Text( // PERBAIKAN: Menambahkan const
                             'Gagal memuat pesanan.\nCoba periksa koneksi internet Anda.',
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 16, color: Colors.grey)),
@@ -151,7 +146,6 @@ class _OrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // PERBAIKAN: Menghapus garis bawah dari nama fungsi lokal.
     String getButtonText() {
       return 'Detail';
     }
@@ -230,7 +224,8 @@ class _OrderCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
-                    formatCurrency(order.total),
+                    // PERBAIKAN: Mengonversi num ke double
+                    formatCurrency(order.total.toDouble()),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,

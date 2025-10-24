@@ -1,7 +1,6 @@
-// 'hide Order' ditambahkan untuk mengatasi ambiguitas.
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import '../models/customer.dart';
-import '../models/order.dart'; // Ini adalah model Order kita yang benar.
+import '../models/order.dart'; 
 import '../models/pos_cart_item.dart';
 
 class PosService {
@@ -13,56 +12,72 @@ class PosService {
     required String paymentMethod,
     required String kasir,
     Customer? customer,
+    String? userId, // userId dari pengguna yang login (jika ada)
   }) async {
     final WriteBatch batch = _firestore.batch();
     final DocumentReference orderRef = _firestore.collection('orders').doc();
 
-    // 1. Siapkan data produk untuk disimpan di order.
+    // PERBAIKAN: Menyesuaikan struktur data produk
     final List<Map<String, dynamic>> productsData = items
         .map((item) => {
-              'productId': item.product.id,
+              'productId': item.product.id, // Menggunakan productId
               'name': item.product.name,
-              'image': item.product.image ?? '',
+              'imageUrl': item.product.image ?? '', // Menggunakan imageUrl
               'quantity': item.quantity,
-              // --- PERBAIKAN FINAL: Menggunakan 'item.product.price' ---
               'price': item.product.price,
+              'sku': item.product.sku, // Menambahkan SKU
             })
         .toList();
 
-    // 2. Siapkan detail customer jika ada.
+    // PERBAIKAN: Menyesuaikan struktur data pelanggan
     Map<String, dynamic>? customerDetails;
+    String? customerId;
+    String? customerName;
+
     if (customer != null) {
       customerDetails = {
         'name': customer.name,
         'address': customer.address,
         'whatsapp': customer.whatsapp,
       };
+      customerId = customer.id; // Mengambil customerId dari objek Customer
+      customerName = customer.name;
     }
 
-    // 3. Buat objek Order baru sesuai model yang sudah diperbarui.
+    // Buat objek Order baru yang sesuai dengan model yang sudah disempurnakan
     final Order newOrder = Order(
       date: Timestamp.now(),
+      createdAt: Timestamp.now(),
       products: productsData,
       productIds: items.map((item) => item.product.id).toList(),
       subtotal: totalAmount,
-      total: totalAmount, // Untuk POS, subtotal dan total sama.
+      total: totalAmount,
       paymentMethod: paymentMethod,
-      status: 'Success', // Status untuk penjualan POS langsung berhasil.
+      status: 'success', // Status untuk penjualan POS langsung berhasil
       kasir: kasir,
+      
+      // PERBAIKAN: Menyimpan semua informasi customer
+      customer: customerName,
+      customerId: customerId, // Menyimpan ID customer
       customerDetails: customerDetails,
-      paymentStatus: 'Paid', // Penjualan POS selalu dianggap lunas.
+      
+      paymentStatus: 'paid',
+      stockUpdated: true, // Penjualan POS langsung mengurangi stok
+      validatedAt: Timestamp.now(),
+      shippingMethod: 'Ambil di Toko', // Default untuk POS
+      shippingFee: 0,
     );
 
-    // 4. Tambahkan operasi 'set' untuk membuat order baru ke dalam batch.
+    // Tambahkan operasi 'set' untuk membuat order baru
     batch.set(orderRef, newOrder.toFirestore());
 
-    // 5. KRUSIAL: Kurangi stok untuk setiap produk yang terjual.
+    // Kurangi stok untuk setiap produk
     for (final item in items) {
       final productRef = _firestore.collection('products').doc(item.product.id);
       batch.update(productRef, {'stock': FieldValue.increment(-item.quantity)});
     }
 
-    // 6. Jalankan semua operasi dalam satu transaksi atomik.
+    // Jalankan semua operasi
     await batch.commit();
   }
 }

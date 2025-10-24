@@ -16,21 +16,26 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
   bool _isLoading = false;
 
   Future<void> _handleLogin() async {
-    setState(() { _isLoading = true; });
+    setState(() {
+      _isLoading = true;
+    });
     try {
       await ref.read(authServiceProvider).signInWithEmail(
-        _emailController.text,
-        _passwordController.text,
-      );
+            _emailController.text,
+            _passwordController.text,
+          );
       // Navigasi ditangani di widget utama (main.dart)
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Login Gagal: Email atau password tidak valid')),
+        const SnackBar(
+            content: Text('Login Gagal: Email atau password tidak valid')),
       );
     } finally {
       if (mounted) {
-        setState(() { _isLoading = false; });
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
@@ -52,11 +57,10 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
                 child: Column(
                   children: [
                     Image.network(
-                      'https://firebasestorage.googleapis.com/v0/b/orderflow-r7jsk.firebasestorage.app/o/go%20logo.png?alt=media&token=cd0ae460-6836-4418-a44d-5c26fed509ec',
+                      'https://firebasestorage.googleapis.com/v0/b/gallery-makassar.firebasestorage.app/o/GM%20logo.png?alt=media&token=35855c49-17b5-4a6d-9887-45134c7ad829',
                       width: 100,
                       height: 100,
                     ),
-                  
                   ],
                 ),
               ),
@@ -76,13 +80,15 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
               const SizedBox(height: 32),
 
               // Email Input
-              const Text('Email', style: TextStyle(fontWeight: FontWeight.w500)),
+              const Text('Email',
+                  style: TextStyle(fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _emailController,
                 decoration: InputDecoration(
                   hintText: 'email@contoh.com',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                   fillColor: Colors.white,
                   filled: true,
                 ),
@@ -91,13 +97,15 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
 
               // Password Input
               const SizedBox(height: 20),
-              const Text('Password', style: TextStyle(fontWeight: FontWeight.w500)),
+              const Text('Password',
+                  style: TextStyle(fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _passwordController,
                 decoration: InputDecoration(
                   hintText: '••••••••',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                   fillColor: Colors.white,
                   filled: true,
                 ),
@@ -111,11 +119,16 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF5DADE2),
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Masuk', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    : const Text('Masuk',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
               ),
             ],
           ),

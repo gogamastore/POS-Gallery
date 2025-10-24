@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:developer';
 
-// PERBAIKAN: 'hide Order' ditambahkan untuk mengatasi ambiguitas impor.
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// Import customer_order.dart tidak lagi diperlukan karena kita membuat Map secara manual.
-import '../models/order.dart'; // Ini adalah kelas Order yang kita inginkan.
+import '../models/order.dart'; 
 import '../models/order_item.dart';
 import '../services/order_service.dart';
 
@@ -28,7 +26,6 @@ final filteredOrdersProvider =
       if (filter == 'all') {
         return AsyncValue.data(orders);
       }
-      // PERBAIKAN: Pemeriksaan null '??' dihapus karena 'status' tidak bisa null.
       final filtered = orders
           .where((o) => o.status.toLowerCase() == filter.toLowerCase())
           .toList();
@@ -50,7 +47,6 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
   Future<bool> createOrder(Map<String, dynamic> orderData) async {
     final orderService = ref.read(orderServiceProvider);
     try {
-      // PERBAIKAN: Buat Map untuk customerDetails sesuai yang diharapkan konstruktor.
       final customerDetailsMap = {
         'name': orderData['customerName'],
         'address': orderData['customerAddress'],
@@ -58,7 +54,6 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
       };
 
       final Order newOrder = Order(
-        // PERBAIKAN: Berikan Timestamp secara langsung, jangan diubah ke DateTime.
         date: orderData['date'] as Timestamp,
         products: (orderData['products'] as List)
             .map((p) => p as Map<String, dynamic>)
@@ -69,8 +64,10 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
         paymentMethod: orderData['paymentMethod'],
         status: orderData['status'],
         kasir: orderData['kasir'] ?? 'System',
-        customerDetails: customerDetailsMap, // Berikan Map yang sudah dibuat.
+        customerDetails: customerDetailsMap,
         paymentStatus: orderData['paymentStatus'] ?? 'Paid',
+        // PERBAIKAN: Menambahkan parameter 'stockUpdated' yang wajib
+        stockUpdated: false, 
       );
 
       await orderService.createOrder(newOrder);

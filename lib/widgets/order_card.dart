@@ -13,11 +13,9 @@ class OrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () {
-        // Mencegah navigasi jika ID null
         if (order.id != null) {
           Navigator.of(context).push(
             MaterialPageRoute(
-              // PERBAIKAN 1: Memastikan order.id tidak null saat dikirim.
               builder: (context) => OrderDetailScreen(orderId: order.id!),
             ),
           );
@@ -36,14 +34,12 @@ class OrderCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    // PERBAIKAN 2: Menangani ID yang bisa null dengan aman.
                     '#${order.id?.substring(0, 8) ?? 'N/A'}...',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      // PERBAIKAN 3: Menggunakan .withAlpha untuk menghindari deprecation warning.
                       color: formatter.getStatusColor(order.status).withAlpha((255 * 0.1).round()),
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -59,11 +55,10 @@ class OrderCard extends StatelessWidget {
                 ],
               ),
               const Divider(height: 20),
-              // Asumsi dari error, widget ini menampilkan nama pelanggan dan tanggal.
               _buildInfoRow(
                 icon: Icons.person_outline,
-                // PERBAIKAN 4: Mengakses nama pelanggan dari map `customerDetails`.
-                text: order.customerDetails?['name'] ?? 'Nama Pelanggan Tidak Ada',
+                // PERBAIKAN: Mengakses nama pelanggan dari 'customer'
+                text: order.customer ?? 'Nama Pelanggan Tidak Ada',
               ),
               const SizedBox(height: 6),
               _buildInfoRow(
@@ -75,8 +70,8 @@ class OrderCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    // PERBAIKAN 5: Memformat nilai total menjadi String.
-                    formatter.formatCurrency(order.total),
+                    // PERBAIKAN: Mengonversi num ke double
+                    formatter.formatCurrency(order.total.toDouble()),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -92,7 +87,6 @@ class OrderCard extends StatelessWidget {
     );
   }
 
-  // Helper widget untuk konsistensi
   Widget _buildInfoRow({required IconData icon, required String text}) {
     return Row(
       children: [
