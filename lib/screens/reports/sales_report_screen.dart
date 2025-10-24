@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:ionicons/ionicons.dart';
 
-import '../../models/order.dart' as app_order; // PERBAIKAN: Menambahkan prefiks
+import '../../models/order.dart' as app_order;
 import '../../providers/sales_report_provider.dart';
 import '../../providers/product_images_provider.dart';
 import '../../providers/user_provider.dart'; 
@@ -74,7 +74,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
               Center(child: Text('Gagal memuat data: ${state.errorMessage}'))
             else if (state.reportData != null) ...[
               userData.when(
-                data: (user) => _buildMetrics(state.reportData!, user),
+                data: (user) => _buildMetrics(state.reportData!, user, state),
                 loading: () =>
                     const SizedBox.shrink(), 
                 error: (err, stack) =>
@@ -83,7 +83,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
               const SizedBox(height: 16),
               _buildTrendsCard(state.reportData!),
               const SizedBox(height: 16),
-              _buildTransactionsTable(state.reportData!),
+              _buildTransactionsTable(state.reportData!), // FUNGSI DIKEMBALIKAN
             ] else
               const Center(child: Text('Tidak ada data untuk ditampilkan.')),
           ],
@@ -127,7 +127,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                   prefixIcon: const Icon(Ionicons.calendar_outline),
                   border: const OutlineInputBorder(),
                   filled: state.activeFilter == SalesReportFilterType.custom,
-                  fillColor: Theme.of(context).primaryColor.withAlpha((255 * 0.1).round()), // PERBAIKAN: Menggunakan withAlpha
+                  fillColor: Theme.of(context).primaryColor.withAlpha((255 * 0.1).round()),
                 ),
                 child: Text(
                   state.selectedDateRange == null
@@ -163,12 +163,12 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
     );
   }
 
-  Widget _buildMetrics(List<app_order.Order> data, UserModel? user) { // PERBAIKAN: Menggunakan prefiks
+  Widget _buildMetrics(List<app_order.Order> data, UserModel? user, SalesReportState state) {
     final bool canViewFinancials =
         user != null && (user.position == 'Admin' || user.position == 'Owner');
     
     final totalRevenue = data.fold<double>(0, (sum, order) => sum + order.total.toDouble());
-    const grossProfit = 0.0; 
+    final grossProfit = state.totalGrossProfit; 
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -250,7 +250,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
     );
   }
 
-  Widget _buildTrendsCard(List<app_order.Order> data) { // PERBAIKAN: Menggunakan prefiks
+  Widget _buildTrendsCard(List<app_order.Order> data) {
     final Map<DateTime, double> dailyTotals = {};
     for (var order in data) {
       final date = DateTime(order.date.toDate().year,
@@ -362,7 +362,8 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
     );
   }
 
-  Widget _buildTransactionsTable(List<app_order.Order> data) { // PERBAIKAN: Menggunakan prefiks
+  // --- FUNGSI DIKEMBALIKAN ---
+  Widget _buildTransactionsTable(List<app_order.Order> data) {
     return Card(
       elevation: 1,
       clipBehavior: Clip.antiAlias,
@@ -404,6 +405,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
     );
   }
 
+  // --- FUNGSI DIKEMBALIKAN ---
   String _translateStatus(String status) {
     switch (status) {
       case 'processing':
@@ -417,7 +419,8 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
     }
   }
 
-  void _showInvoiceDialog(BuildContext context, app_order.Order order) { // PERBAIKAN: Menggunakan prefiks
+  // --- FUNGSI DIKEMBALIKAN & DISESUAIKAN ---
+  void _showInvoiceDialog(BuildContext context, app_order.Order order) {
     final images = ref.watch(productImagesProvider);
 
     String getPaymentStatusText(String status) {
@@ -597,9 +600,9 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                       _buildDialogTotalRow(context, 'Total Penjualan',
                           formatter.formatCurrency(order.total.toDouble())),
                       _buildDialogTotalRow(context, 'Total Pokok (HPP)',
-                          formatter.formatCurrency(0)),
+                          formatter.formatCurrency(order.cogs)),
                       _buildDialogTotalRow(context, 'Laba Kotor',
-                          formatter.formatCurrency(0),
+                          formatter.formatCurrency(order.grossProfit),
                           isProfit: true),
                     ],
                   ),

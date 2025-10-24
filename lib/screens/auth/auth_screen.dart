@@ -44,93 +44,106 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFE8F4F8),
-      body: SafeArea(
+      body: Center( // 1. Menambahkan Center untuk memposisikan konten di tengah
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Logo Section
-              Container(
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                child: Column(
-                  children: [
-                    Image.network(
-                      'https://firebasestorage.googleapis.com/v0/b/gallery-makassar.firebasestorage.app/o/GM%20logo.png?alt=media&token=35855c49-17b5-4a6d-9887-45134c7ad829',
-                      width: 100,
-                      height: 100,
-                    ),
-                  ],
+          padding: const EdgeInsets.all(24), // Sedikit padding ekstra
+          child: ConstrainedBox( // 2. Membatasi lebar maksimum
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.center, // Pusatkan secara vertikal juga
+              children: [
+                // Logo Section
+                Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Image.network(
+                    'https://firebasestorage.googleapis.com/v0/b/gallery-makassar.firebasestorage.app/o/GM%20logo.png?alt=media&token=35855c49-17b5-4a6d-9887-45134c7ad829',
+                    width: 100,
+                    height: 100,
+                  ),
                 ),
-              ),
 
-              // Welcome Section
-              const Text(
-                'Selamat Datang',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center, // Ini adalah cara yang benar
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Masukkan email dan password untuk masuk ke akun Anda.',
-                style: TextStyle(fontSize: 14, color: Colors.grey),
-                textAlign: TextAlign.center, // Ini juga
-              ),
-              const SizedBox(height: 32),
-
-              // Email Input
-              const Text('Email',
-                  style: TextStyle(fontWeight: FontWeight.w500)),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _emailController,
-                decoration: InputDecoration(
-                  hintText: 'email@contoh.com',
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  fillColor: Colors.white,
-                  filled: true,
+                // Welcome Section
+                const Text(
+                  'Selamat Datang',
+                  style: TextStyle(
+                    fontSize: 28, 
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1A5276), // Warna lebih gelap
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-
-              // Password Input
-              const SizedBox(height: 20),
-              const Text('Password',
-                  style: TextStyle(fontWeight: FontWeight.w500)),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _passwordController,
-                decoration: InputDecoration(
-                  hintText: '••••••••',
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  fillColor: Colors.white,
-                  filled: true,
+                const SizedBox(height: 8),
+                const Text(
+                  'Masuk ke akun Anda untuk melanjutkan',
+                  style: TextStyle(
+                    fontSize: 16, 
+                    color: Color(0xFF566573), // Warna abu-abu yang lebih lembut
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                obscureText: true,
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 40),
 
-              // Login Button
-              ElevatedButton(
-                onPressed: _isLoading ? null : _handleLogin,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF5DADE2),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                // Email Input
+                TextFormField(
+                  controller: _emailController,
+                  decoration: InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'email@contoh.com',
+                    prefixIcon: const Icon(Icons.email_outlined),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)), // Sudut lebih bulat
+                    fillColor: Colors.white,
+                    filled: true,
+                  ),
+                  keyboardType: TextInputType.emailAddress,
                 ),
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Masuk',
-                        style: TextStyle(
+
+                // Password Input
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _passwordController,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    hintText: '••••••••',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)), // Sudut lebih bulat
+                    fillColor: Colors.white,
+                    filled: true,
+                  ),
+                  obscureText: true,
+                ),
+                const SizedBox(height: 32),
+
+                // Login Button
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _handleLogin,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3498DB), // Warna biru yang lebih cerah
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)), // Sudut lebih bulat
+                    elevation: 5, // Tambah sedikit bayangan
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
                             color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold)),
-              ),
-            ],
+                            strokeWidth: 3,
+                          ),
+                        )
+                      : const Text('Masuk',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
-
+import 'sales_report_screen.dart'; // Import Laporan Penjualan
+import 'customer_report_screen.dart'; // Import Laporan Pelanggan
 import 'operational_costs_screen.dart';
 import 'profit_loss_screen.dart';
 
@@ -14,14 +15,37 @@ class ReportCenterScreen extends StatelessWidget {
         title: const Text('Pusat Laporan'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16.0),
         children: [
-          _buildReportCard(
+          _buildMenuItem(
             context,
-            icon: Ionicons.document_text_outline,
+            icon: Ionicons.cart_outline,
+            title: 'Laporan Penjualan',
+            subtitle: 'Analisis detail transaksi dan performa produk.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SalesReportScreen()),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.people_outline,
+            title: 'Laporan Pelanggan',
+            subtitle: 'Lihat riwayat dan total belanja per pelanggan.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CustomerReportScreen()),
+              );
+            },
+          ),
+          const Divider(),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.wallet_outline,
             title: 'Laporan Biaya Operasional',
-            subtitle: 'Lacak semua pengeluaran bisnis Anda.',
-            color: Colors.orange,
+            subtitle: 'Lacak semua pengeluaran non-produk.',
             onTap: () {
               Navigator.push(
                 context,
@@ -29,13 +53,11 @@ class ReportCenterScreen extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(height: 16),
-          _buildReportCard(
+          _buildMenuItem(
             context,
             icon: Ionicons.analytics_outline,
             title: 'Laporan Laba Rugi',
-            subtitle: 'Analisis pendapatan dan keuntungan Anda.',
-            color: Colors.green,
+            subtitle: 'Analisis pendapatan, HPP, dan laba bersih.',
             onTap: () {
               Navigator.push(
                 context,
@@ -48,22 +70,15 @@ class ReportCenterScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildReportCard(BuildContext context, {required IconData icon, required String title, required String subtitle, required Color color, required VoidCallback onTap}) {
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 2.0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
-        leading: CircleAvatar(
-          backgroundColor: color.withAlpha(26), // Perbaikan: Menggunakan withAlpha
-          child: Icon(icon, color: color, size: 30),
-        ),
-        title: Text(title, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle, style: theme.textTheme.bodyMedium),
-        trailing: const Icon(Ionicons.chevron_forward_outline),
-        onTap: onTap,
-      ),
+  // Mengadopsi gaya dari SettingsScreen
+  Widget _buildMenuItem(BuildContext context, {required IconData icon, required String title, required String subtitle, required VoidCallback onTap}) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), // Menambahkan padding vertikal
+      leading: Icon(icon, color: Theme.of(context).primaryColor, size: 28), // Ikon sedikit lebih besar
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
     );
   }
 }
