@@ -7,6 +7,7 @@ import 'package:ionicons/ionicons.dart';
 import '../../models/customer.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/customer_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../services/pos_service.dart';
 
 class ProcessPosScreen extends ConsumerStatefulWidget {
@@ -21,7 +22,6 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
   Customer? _selectedCustomer;
   String _paymentMethod = 'cash';
   bool _isProcessing = false;
-  final String _kasirName = 'Febrianti'; // Nama kasir, bisa diambil dari state login nantinya
 
   Future<void> _showCustomerSelectionDialog() async {
     final selected = await showDialog<Customer>(
@@ -36,6 +36,41 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
     }
   }
 
+  Future<void> _saveAsProcessing() async {
+    if (!_formKey.currentState!.validate() || _isProcessing) return;
+
+    final cartItems = ref.read(posCartProvider);
+    final totalAmount = ref.read(posTotalProvider);
+    final user = ref.read(userDataProvider).value;
+    final kasirName = user?.name ?? 'Kasir';
+    final navigator = Navigator.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    if (cartItems.isEmpty) {
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Keranjang kosong.')));
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+
+    try {
+      await PosService().saveOrderAsProcessing(
+        items: cartItems,
+        totalAmount: totalAmount,
+        paymentMethod: _paymentMethod,
+        kasir: kasirName,
+        customer: _selectedCustomer,
+      );
+      ref.read(posCartProvider.notifier).clearCart();
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Pesanan disimpan sebagai Draf.')));
+      navigator.popUntil((route) => route.isFirst);
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Gagal menyimpan draf: $e')));
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
   Future<void> _processTransaction() async {
     if (!_formKey.currentState!.validate() || _isProcessing) {
       return;
@@ -43,6 +78,9 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
 
     final cartItems = ref.read(posCartProvider);
     final totalAmount = ref.read(posTotalProvider);
+    final user = ref.read(userDataProvider).value;
+    final kasirName = user?.name ?? 'Kasir';
+
     final navigator = Navigator.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
@@ -62,7 +100,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         items: cartItems,
         totalAmount: totalAmount,
         paymentMethod: _paymentMethod,
-        kasir: _kasirName,
+        kasir: kasirName,
         customer: _selectedCustomer,
       );
 
@@ -72,7 +110,6 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         const SnackBar(content: Text('Transaksi penjualan berhasil diproses dan disimpan!')),
       );
       
-      // Kembali ke halaman root (pos screen)
       navigator.popUntil((route) => route.isFirst);
 
     } catch (e) {
@@ -234,17 +271,34 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
             if (_isProcessing)
               const Center(child: CircularProgressIndicator())
             else
-              ElevatedButton.icon(
-                onPressed: cartItems.isNotEmpty ? _processTransaction : null,
-                icon: const Icon(Icons.check_circle_outline),
-                label: const Text('Konfirmasi & Simpan'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: const Color(0xFF27AE60),
-                  foregroundColor: Colors.white,
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  disabledBackgroundColor: Colors.grey,
-                ),
+             Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: cartItems.isNotEmpty ? _saveAsProcessing : null,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        side: const BorderSide(color: Colors.grey),
+                        foregroundColor: Colors.black54,
+                      ),
+                      child: const Text('Simpan'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: cartItems.isNotEmpty ? _processTransaction : null,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: const Color(0xFF27AE60),
+                        foregroundColor: Colors.white,
+                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        disabledBackgroundColor: Colors.grey,
+                      ),
+                      child: const Text('Konfirmasi'),
+                    ),
+                  ),
+                ],
               )
           ],
         ),

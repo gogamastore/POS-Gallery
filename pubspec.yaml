@@ -1,3 +1,4 @@
+
 name: myapp
 description: "A new Flutter project."
 
@@ -45,13 +46,30 @@ dev_dependencies:
   freezed: ^2.5.3
   json_serializable: ^6.8.0
   flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.7
 
-# DIPERBAIKI: Konfigurasi untuk flutter_launcher_icons, menonaktifkan iOS
-flutter_launcher_icons:
-  android: "launcher_icon" # Gunakan "launcher_icon" sebagai nama default
-  ios: false # Diubah ke false untuk melewati pembuatan ikon iOS
-  image_path: "assets/logo/logo.png"
-  min_sdk_android: 21 # Opsional: Untuk mendukung ikon adaptif
+# flutter_native_splash-development.yaml is used for dev builds
+# flutter_native_splash.yaml is used for production builds
+flutter_native_splash:
+  # This package generates native code to customize Flutter's default white native splash screen
+  # with background color and splash image.
+  # Customize the parameters below, and run the following command in the terminal:
+  # flutter pub run flutter_native_splash:create
+  # To restore Flutter's default white splash screen, run the following command in the terminal:
+  # flutter pub run flutter_native_splash:remove
+
+  # IMPORTANT: This configuration is ignored when using flutter_native_splash.yaml
+  # It is only used when you run:
+  # flutter pub run flutter_native_splash:create --path=flutter_native_splash-development.yaml
+  background_image: "assets/logo/splash-animation.gif"
+  
+  # The image parameter allows you to specify an image used in the splash screen.  It must be a
+  # png file and should be sized for the target platform.
+  image: "assets/logo/logo.png"
+
+# Konfigurasi untuk nama aplikasi
+flutter_launcher_name:
+  name: "Gallery POS"
 
 flutter:
   uses-material-design: true

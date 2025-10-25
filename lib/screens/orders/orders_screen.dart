@@ -11,10 +11,25 @@ import '../../utils/formatter.dart';
 class OrdersScreen extends ConsumerWidget {
   const OrdersScreen({super.key});
 
+  Future<void> _selectDateRange(BuildContext context, WidgetRef ref) async {
+    final initialRange = ref.read(dateRangeProvider);
+    final newRange = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: initialRange,
+    );
+
+    if (newRange != null) {
+      ref.read(dateRangeProvider.notifier).state = newRange;
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final filteredOrders = ref.watch(filteredOrdersProvider);
     final currentFilter = ref.watch(orderFilterProvider);
+    final dateRange = ref.watch(dateRangeProvider);
 
     void onFilterChanged(String filter) {
       ref.read(orderFilterProvider.notifier).state = filter;
@@ -28,6 +43,7 @@ class OrdersScreen extends ConsumerWidget {
       body: Column(
         children: [
           _buildFilterChips(context, currentFilter, onFilterChanged),
+          _buildDateFilter(context, dateRange, () => _selectDateRange(context, ref)),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
@@ -88,6 +104,36 @@ class OrdersScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDateFilter(BuildContext context, DateTimeRange dateRange, VoidCallback onTap) {
+    final f = DateFormat('dd/MM/yyyy');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(12.0),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8.0),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Ionicons.calendar_outline, color: Colors.deepPurple),
+              const SizedBox(width: 8.0),
+              Text(
+                '${f.format(dateRange.start)} - ${f.format(dateRange.end)}',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(width: 8.0),
+              const Icon(Icons.arrow_drop_down, color: Colors.deepPurple),
+            ],
+          ),
+        ),
       ),
     );
   }

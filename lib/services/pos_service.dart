@@ -6,30 +6,28 @@ import '../models/pos_cart_item.dart';
 class PosService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<void> processSaleTransaction({
+  // Fungsi untuk menyimpan sebagai 'processing' tanpa mengurangi stok
+  Future<void> saveOrderAsProcessing({
     required List<PosCartItem> items,
     required double totalAmount,
     required String paymentMethod,
     required String kasir,
     Customer? customer,
-    String? userId, // userId dari pengguna yang login (jika ada)
   }) async {
-    final WriteBatch batch = _firestore.batch();
     final DocumentReference orderRef = _firestore.collection('orders').doc();
 
-    // PERBAIKAN: Menyesuaikan struktur data produk
+    // Data produk sudah benar, tidak perlu diubah
     final List<Map<String, dynamic>> productsData = items
         .map((item) => {
-              'productId': item.product.id, // Menggunakan productId
+              'productId': item.product.id,
               'name': item.product.name,
-              'imageUrl': item.product.image ?? '', // Menggunakan imageUrl
+              'imageUrl': item.product.image ?? '',
               'quantity': item.quantity,
-              'price': item.product.price,
-              'sku': item.product.sku, // Menambahkan SKU
+              'price': item.PosPrice, // Menggunakan harga dari keranjang
+              'sku': item.product.sku,
             })
         .toList();
 
-    // PERBAIKAN: Menyesuaikan struktur data pelanggan
     Map<String, dynamic>? customerDetails;
     String? customerId;
     String? customerName;
@@ -40,11 +38,10 @@ class PosService {
         'address': customer.address,
         'whatsapp': customer.whatsapp,
       };
-      customerId = customer.id; // Mengambil customerId dari objek Customer
+      customerId = customer.id;
       customerName = customer.name;
     }
 
-    // Buat objek Order baru yang sesuai dengan model yang sudah disempurnakan
     final Order newOrder = Order(
       date: Timestamp.now(),
       createdAt: Timestamp.now(),
@@ -53,31 +50,87 @@ class PosService {
       subtotal: totalAmount,
       total: totalAmount,
       paymentMethod: paymentMethod,
-      status: 'success', // Status untuk penjualan POS langsung berhasil
+      status: 'processing', 
       kasir: kasir,
-      
-      // PERBAIKAN: Menyimpan semua informasi customer
       customer: customerName,
-      customerId: customerId, // Menyimpan ID customer
+      customerId: customerId,
       customerDetails: customerDetails,
-      
-      paymentStatus: 'paid',
-      stockUpdated: true, // Penjualan POS langsung mengurangi stok
-      validatedAt: Timestamp.now(),
-      shippingMethod: 'Ambil di Toko', // Default untuk POS
+      paymentStatus: 'pending',
+      stockUpdated: false, // Stok tidak diperbarui untuk draf
+      shippingMethod: 'Ambil di Toko',
       shippingFee: 0,
     );
 
-    // Tambahkan operasi 'set' untuk membuat order baru
-    batch.set(orderRef, newOrder.toFirestore());
+    // Hanya membuat pesanan, tidak ada operasi stok
+    await orderRef.set(newOrder.toFirestore());
+  }
 
-    // Kurangi stok untuk setiap produk
-    for (final item in items) {
-      final productRef = _firestore.collection('products').doc(item.product.id);
-      batch.update(productRef, {'stock': FieldValue.increment(-item.quantity)});
+  Future<void> processSaleTransaction({
+    required List<PosCartItem> items,
+    required double totalAmount,
+    required String paymentMethod,
+    required String kasir,
+    Customer? customer,
+    String? userId,
+  }) async {
+    final WriteBatch batch = _firestore.batch();
+    final DocumentReference orderRef = _firestore.collection('orders').doc();
+
+    final List<Map<String, dynamic>> productsData = items
+        .map((item) => {
+              'productId': item.product.id,
+              'name': item.product.name,
+              'imageUrl': item.product.image ?? '',
+              'quantity': item.quantity,
+              'price': item.PosPrice, // Menggunakan harga dari keranjang
+              'sku': item.product.sku,
+            })
+        .toList();
+
+    Map<String, dynamic>? customerDetails;
+    String? customerId;
+    String? customerName;
+
+    if (customer != null) {
+      customerDetails = {
+        'name': customer.name,
+        'address': customer.address,
+        'whatsapp': customer.whatsapp,
+      };
+      customerId = customer.id;
+      customerName = customer.name;
     }
 
-    // Jalankan semua operasi
+    final Order newOrder = Order(
+      date: Timestamp.now(),
+      createdAt: Timestamp.now(),
+      products: productsData,
+      productIds: items.map((item) => item.product.id).toList(),
+      subtotal: totalAmount,
+      total: totalAmount,
+      paymentMethod: paymentMethod,
+      status: 'success',
+      kasir: kasir,
+      customer: customerName,
+      customerId: customerId,
+      customerDetails: customerDetails,
+      paymentStatus: 'paid',
+      stockUpdated: true,
+      validatedAt: Timestamp.now(),
+      shippingMethod: 'Ambil di Toko',
+      shippingFee: 0,
+    );
+
+    batch.set(orderRef, newOrder.toFirestore());
+
+    // PERBAIKAN FINAL: Hanya kurangi stok untuk produk katalog
+    for (final item in items) {
+      if (!item.product.id.startsWith('temp_')) {
+        final productRef = _firestore.collection('products').doc(item.product.id);
+        batch.update(productRef, {'stock': FieldValue.increment(-item.quantity)});
+      }
+    }
+
     await batch.commit();
   }
 }

@@ -6,11 +6,63 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/order.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/pos_provider.dart';
+import '../../providers/product_provider.dart'; // PERBAIKAN: Impor provider produk
 import '../../utils/formatter.dart';
+import '../pos/process_pos_screen.dart';
+import 'edit_order_screen.dart';
 
 class OrderDetailScreen extends ConsumerWidget {
   final String orderId;
   const OrderDetailScreen({super.key, required this.orderId});
+
+  // Fungsi untuk memproses pesanan
+  Future<void> _processOrder(BuildContext context, WidgetRef ref, Order order) async {
+    // 1. Bersihkan keranjang yang ada
+    ref.read(posCartProvider.notifier).clearCart();
+
+    // 2. Ambil semua data produk yang relevan
+    // PERBAIKAN: Menggunakan allProductsProvider dan menangani state AsyncValue
+    final productsAsyncValue = ref.read(allProductsProvider);
+    final allProducts = productsAsyncValue.asData?.value;
+
+    // PERBAIKAN: Menambahkan null check
+    if (allProducts == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal memuat data produk. Silakan coba lagi.')),
+      );
+      return;
+    }
+
+    // 3. Isi keranjang dengan item dari pesanan
+    for (var orderProduct in order.products) {
+      try {
+        // PERBAIKAN: Menggunakan firstWhere dengan benar dan menangani error
+        final product = allProducts.firstWhere((p) => p.id == orderProduct['productId']);
+
+        // PERBAIKAN: Menggunakan addItem dengan argumen yang benar
+        ref.read(posCartProvider.notifier).addItem(
+              product,
+              orderProduct['quantity'] as int,
+              (orderProduct['price'] as num).toDouble(),
+            );
+      } catch (e) {
+        // Tangani kasus di mana produk dari pesanan lama tidak ditemukan lagi
+        print('Produk dengan ID ${orderProduct['productId']} tidak ditemukan lagi.');
+        continue;
+      }
+    }
+
+    // 4. Hapus pesanan lama yang statusnya 'processing'
+    await ref.read(orderActionsProvider.notifier).deleteOrder(order.id!);
+
+    // 5. PERBAIKAN: Menambahkan pengecekan 'mounted' sebelum navigasi
+    if (context.mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const ProcessPosScreen()),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -19,6 +71,25 @@ class OrderDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detail Pesanan'),
+        actions: [
+          orderAsync.when(
+            data: (order) => order != null
+                ? IconButton(
+                    icon: const Icon(Ionicons.create_outline),
+                    tooltip: 'Edit Pesanan',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => EditOrderScreen(order: order),
+                        ),
+                      );
+                    },
+                  )
+                : const SizedBox.shrink(),
+            loading: () => const SizedBox.shrink(),
+            error: (e, s) => const SizedBox.shrink(),
+          )
+        ],
       ),
       body: orderAsync.when(
         data: (order) {
@@ -77,7 +148,6 @@ class OrderDetailScreen extends ConsumerWidget {
                     _buildDetailRow('Metode Pembayaran', order.paymentMethod),
                     _buildDetailRow('Status Pembayaran', order.paymentStatus),
                     const Divider(height: 20),
-                    // PERBAIKAN: Mengonversi num ke double
                     _buildTotalRow('Subtotal', formatCurrency(order.subtotal.toDouble())),
                     _buildTotalRow('Total', formatCurrency(order.total.toDouble()),
                         isTotal: true),
@@ -87,18 +157,40 @@ class OrderDetailScreen extends ConsumerWidget {
                     order.status.toLowerCase() != 'success')
                   Padding(
                     padding: const EdgeInsets.only(top: 24.0),
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Ionicons.close_circle_outline),
-                      label: const Text('Batalkan Pesanan'),
-                      onPressed: () =>
-                          _showCancelConfirmation(context, ref, order),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade700,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
-                      ),
+                    child: Row(
+                      children: [
+                        if (order.status.toLowerCase() == 'processing')
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Ionicons.play_circle_outline),
+                              label: const Text('Proses'),
+                              onPressed: () => _processOrder(context, ref, order),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade700,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        if (order.status.toLowerCase() == 'processing')
+                          const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Ionicons.close_circle_outline),
+                            label: const Text('Batalkan'),
+                            onPressed: () => _showCancelConfirmation(context, ref, order),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -174,7 +266,6 @@ class OrderDetailScreen extends ConsumerWidget {
   }
 
   Widget _buildProductTile(Map<String, dynamic> product) {
-    // PERBAIKAN: Membaca 'imageUrl'
     final imageUrl = product['imageUrl'] as String?;
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -239,7 +330,7 @@ class OrderDetailScreen extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Batalkan Pesanan?'),
         content: const Text(
-            'Apakah Anda yakin ingin membatalkan pesanan ini? Stok produk akan dikembalikan.'),
+            'Apakah Anda yakin ingin membatalkan pesanan ini? Stok produk akan dikembalikan jika sebelumnya sudah dikurangi.'),
         actions: [
           TextButton(
             child: const Text('Tidak'),

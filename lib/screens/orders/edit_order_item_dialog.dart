@@ -31,15 +31,6 @@ class _EditOrderItemDialogState extends State<EditOrderItemDialog> {
     super.dispose();
   }
 
-  void _save() {
-    final newPrice = double.tryParse(_priceController.text) ?? widget.product.price;
-    final updatedProduct = widget.product.copyWith(
-      price: newPrice,
-      quantity: _quantity,
-    );
-    Navigator.of(context).pop(updatedProduct);
-  }
-
   @override
   Widget build(BuildContext context) {
     final currencyFormatter = NumberFormat.currency(
@@ -106,7 +97,13 @@ class _EditOrderItemDialogState extends State<EditOrderItemDialog> {
           child: const Text('Batal'),
         ),
         ElevatedButton(
-          onPressed: _save,
+          onPressed: () {
+            final newPrice = double.tryParse(_priceController.text) ?? widget.product.price;
+            Navigator.of(context).pop({
+              'quantity': _quantity,
+              'price': newPrice,
+            });
+          },
           child: const Text('Simpan'),
         ),
       ],

@@ -10,6 +10,7 @@ import '../../providers/pos_provider.dart';
 import '../../services/sound_service.dart';
 import '../products/barcode_scanner_screen.dart';
 import 'add_to_pos_cart_dialog.dart';
+import 'add_temporary_product_dialog.dart'; // Impor dialog baru
 import 'edit_pos_cart_item_dialog.dart';
 import 'pos_cart_screen.dart';
 
@@ -63,6 +64,14 @@ class PosScreenState extends ConsumerState<PosScreen> {
     );
   }
 
+  // Fungsi untuk menampilkan dialog tambah produk sementara
+  void _showAddTemporaryProductDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => const AddTemporaryProductDialog(),
+    );
+  }
+
   void _showEditCartItemDialog(PosCartItem item) {
     showDialog(
       context: context,
@@ -76,6 +85,19 @@ class PosScreenState extends ConsumerState<PosScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
+      // MENAMBAHKAN APPBAR
+      appBar: AppBar(
+        title: const Text('Point of Sale'),
+        backgroundColor: Colors.white,
+        elevation: 1,
+        actions: [
+          IconButton(
+            icon: const Icon(Ionicons.add_circle_outline),
+            onPressed: _showAddTemporaryProductDialog,
+            tooltip: 'Tambah Produk Non-Katalog',
+          ),
+        ],
+      ),
       bottomNavigationBar:
           cartItemCount > 0 ? _buildCartBottomBar(context, cartItemCount) : null,
       body: SafeArea(

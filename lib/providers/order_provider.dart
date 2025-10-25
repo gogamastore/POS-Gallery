@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/order.dart'; 
@@ -10,8 +11,17 @@ import '../services/order_service.dart';
 
 final orderServiceProvider = Provider<OrderService>((ref) => OrderService());
 
+// Provider untuk rentang tanggal
+final dateRangeProvider = StateProvider<DateTimeRange>((ref) {
+  final now = DateTime.now();
+  final todayStart = DateTime(now.year, now.month, now.day);
+  final todayEnd = todayStart.add(const Duration(days: 1));
+  return DateTimeRange(start: todayStart, end: todayEnd);
+});
+
 final allOrdersProvider = FutureProvider.autoDispose<List<Order>>((ref) async {
-  return ref.watch(orderServiceProvider).getAllOrders();
+  final dateRange = ref.watch(dateRangeProvider);
+  return ref.watch(orderServiceProvider).getOrdersByDateRange(dateRange.start, dateRange.end);
 });
 
 final orderFilterProvider = StateProvider<String>((ref) => 'processing');
@@ -42,6 +52,19 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
 
   Future<void> refreshOrders() async {
     ref.invalidate(allOrdersProvider);
+    // Juga invalidasi detail jika ada yang terbuka
+    // Ini adalah pendekatan sederhana; bisa lebih spesifik jika diperlukan
+  }
+
+  Future<void> deleteOrder(String orderId) async {
+    final orderService = ref.read(orderServiceProvider);
+    try {
+      await orderService.deleteOrder(orderId);
+      refreshOrders();
+    } catch (e, s) {
+      log('Gagal menghapus pesanan: $e', name: 'OrderDeletionError', error: e, stackTrace: s);
+      // Mungkin re-throw atau tangani error di UI
+    }
   }
 
   Future<bool> createOrder(Map<String, dynamic> orderData) async {
@@ -66,7 +89,6 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
         kasir: orderData['kasir'] ?? 'System',
         customerDetails: customerDetailsMap,
         paymentStatus: orderData['paymentStatus'] ?? 'Paid',
-        // PERBAIKAN: Menambahkan parameter 'stockUpdated' yang wajib
         stockUpdated: false, 
       );
 
@@ -84,6 +106,7 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
     final orderService = ref.read(orderServiceProvider);
     await orderService.updateOrderStatus(orderId, newStatus);
     refreshOrders();
+     ref.invalidate(orderDetailsProvider(orderId));
   }
 
   Future<void> updateOrderDetails(
@@ -102,6 +125,7 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
       validatorName: validatorName,
     );
     refreshOrders();
+    ref.invalidate(orderDetailsProvider(orderId));
   }
 
   Future<void> setOrderValidator(String orderId, String validatorName) async {
@@ -118,5 +142,62 @@ final orderActionsProvider =
 
 final orderDetailsProvider =
     FutureProvider.family.autoDispose<Order?, String>((ref, orderId) async {
-  return ref.watch(orderServiceProvider).getOrderById(orderId);
+  final orderService = ref.watch(orderServiceProvider);
+  // Dapatkan data order
+  final order = await orderService.getOrderById(orderId);
+  if (order == null) return null;
+
+  // Dapatkan detail produk dari koleksi 'products'
+  final productFutures = order.productIds.map((productId) => 
+      FirebaseFirestore.instance.collection('products').doc(productId).get()
+  ).toList();
+
+  final productSnapshots = await Future.wait(productFutures);
+
+  final Map<String, Map<String, dynamic>> productDetails = {};
+  for (var doc in productSnapshots) {
+      if (doc.exists) {
+          productDetails[doc.id] = doc.data()!;
+      }
+  }
+
+  // Ganti data produk di dalam order dengan detail yang baru didapatkan
+  final updatedProducts = order.products.map((product) {
+      final details = productDetails[product['productId']];
+      if (details != null) {
+          return {
+              ...product,
+              'name': details['name'] ?? product['name'],
+              'imageUrl': details['imageUrl'] ?? product['imageUrl'],
+              'sku': details['sku'] ?? product['sku'],
+          };
+      }
+      return product;
+  }).toList();
+
+  // PERBAIKAN: Membuat instance Order baru secara manual, bukan menggunakan copyWith
+  return Order(
+    id: order.id,
+    date: order.date,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    validatedAt: order.validatedAt,
+    shippedAt: order.shippedAt,
+    customer: order.customer,
+    customerId: order.customerId,
+    customerDetails: order.customerDetails,
+    products: updatedProducts, // Ini adalah data yang diperbarui
+    productIds: order.productIds,
+    subtotal: order.subtotal,
+    total: order.total,
+    shippingFee: order.shippingFee,
+    paymentMethod: order.paymentMethod,
+    paymentStatus: order.paymentStatus,
+    status: order.status,
+    kasir: order.kasir,
+    stockUpdated: order.stockUpdated,
+    shippingMethod: order.shippingMethod,
+    cogs: order.cogs,
+    grossProfit: order.grossProfit,
+  );
 });

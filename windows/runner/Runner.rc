@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "store.gallerymakassar" "\0"
-            VALUE "FileDescription", "myapp" "\0"
+            VALUE "FileDescription", "Gallery POS" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "myapp" "\0"
+            VALUE "InternalName", "Gallery POS" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 store.gallerymakassar. All rights reserved." "\0"
-            VALUE "OriginalFilename", "myapp.exe" "\0"
-            VALUE "ProductName", "myapp" "\0"
+            VALUE "OriginalFilename", "Gallery POS.exe" "\0"
+            VALUE "ProductName", "Gallery POS" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

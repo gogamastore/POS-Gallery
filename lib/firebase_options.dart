@@ -66,4 +66,14 @@ class DefaultFirebaseOptions {
     projectId: 'gallery-makassar',
     storageBucket: 'gallery-makassar.firebasestorage.app',
   );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyAd5OIAngqc2sOkAEcMM-KKrJ2cx5UFlVc',
+    appId: '1:19804179052:web:98bd0f1d06606890de2649',
+    messagingSenderId: '19804179052',
+    projectId: 'gallery-makassar',
+    authDomain: 'gallery-makassar.firebaseapp.com',
+    storageBucket: 'gallery-makassar.firebasestorage.app',
+    measurementId: 'G-26V1BL2VYL',
+  );
 }
