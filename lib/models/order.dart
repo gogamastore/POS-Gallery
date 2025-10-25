@@ -67,7 +67,8 @@ class Order {
   factory Order.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data()!;
 
-    Timestamp? _parseTimestamp(dynamic value) {
+    // PERBAIKAN: Menghilangkan underscore dari nama fungsi lokal
+    Timestamp? parseTimestamp(dynamic value) {
       if (value is Timestamp) return value;
       if (value is String) return Timestamp.fromDate(DateTime.parse(value));
       return null;
@@ -76,7 +77,7 @@ class Order {
     return Order(
       id: doc.id,
       date: data['date'] as Timestamp,
-      createdAt: _parseTimestamp(data['created_at']),
+      createdAt: parseTimestamp(data['created_at']), // Menggunakan fungsi yang sudah diganti nama
       updatedAt: data['updatedAt'] as Timestamp?,
       validatedAt: data['validatedAt'] as Timestamp?,
       shippedAt: data['shippedAt'] as Timestamp?,
@@ -98,34 +99,35 @@ class Order {
     );
   }
   
-  // --- METHOD BARU UNTUK MEMPERBARUI ---
+  // --- METHOD copyWith DIPERBARUI ---
   Order copyWith({
     double? cogs,
     double? grossProfit,
   }) {
+    // PERBAIKAN: Menghilangkan 'this.' yang tidak perlu
     return Order(
-      id: this.id,
-      date: this.date,
-      createdAt: this.createdAt,
-      updatedAt: this.updatedAt,
-      validatedAt: this.validatedAt,
-      shippedAt: this.shippedAt,
-      customer: this.customer,
-      customerId: this.customerId,
-      customerDetails: this.customerDetails,
-      products: this.products,
-      productIds: this.productIds,
-      subtotal: this.subtotal,
-      total: this.total,
-      shippingFee: this.shippingFee,
-      paymentMethod: this.paymentMethod,
-      paymentStatus: this.paymentStatus,
-      status: this.status,
-      kasir: this.kasir,
-      stockUpdated: this.stockUpdated,
-      shippingMethod: this.shippingMethod,
-      cogs: cogs ?? this.cogs,
-      grossProfit: grossProfit ?? this.grossProfit,
+      id: id,
+      date: date,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      validatedAt: validatedAt,
+      shippedAt: shippedAt,
+      customer: customer,
+      customerId: customerId,
+      customerDetails: customerDetails,
+      products: products,
+      productIds: productIds,
+      subtotal: subtotal,
+      total: total,
+      shippingFee: shippingFee,
+      paymentMethod: paymentMethod,
+      paymentStatus: paymentStatus,
+      status: status,
+      kasir: kasir,
+      stockUpdated: stockUpdated,
+      shippingMethod: shippingMethod,
+      cogs: cogs ?? this.cogs, // 'this.' di sini diperlukan untuk membedakan dengan parameter
+      grossProfit: grossProfit ?? this.grossProfit, // 'this.' di sini diperlukan
     );
   }
 
