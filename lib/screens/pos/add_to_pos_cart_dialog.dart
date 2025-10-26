@@ -1,13 +1,16 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/product.dart';
+import '../../models/promotion_model.dart';
 import '../../providers/pos_provider.dart';
 
 class AddToPosCartDialog extends ConsumerStatefulWidget {
   final Product product;
+  final Promotion? activePromo;
 
-  const AddToPosCartDialog({super.key, required this.product});
+  const AddToPosCartDialog({super.key, required this.product, this.activePromo});
 
   @override
   AddToPosCartDialogState createState() => AddToPosCartDialogState();
@@ -21,7 +24,7 @@ class AddToPosCartDialogState extends ConsumerState<AddToPosCartDialog> {
   @override
   void initState() {
     super.initState();
-    _sellingPrice = widget.product.price;
+    _sellingPrice = widget.activePromo?.discountPrice ?? widget.product.price;
   }
 
   void _submit() {
@@ -75,18 +78,29 @@ class AddToPosCartDialogState extends ConsumerState<AddToPosCartDialog> {
             TextFormField(
               key: Key(_sellingPrice.toString()),
               initialValue: _sellingPrice.toStringAsFixed(0),
-              decoration: const InputDecoration(labelText: 'Harga Jual per Unit', prefixText: 'Rp ', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                  labelText: 'Harga Jual per Unit', prefixText: 'Rp ', border: OutlineInputBorder()),
               keyboardType: const TextInputType.numberWithOptions(decimal: false),
               validator: (value) {
-                if (value == null || double.tryParse(value.replaceAll('.', '')) == null || double.parse(value.replaceAll('.', '')) < 0) {
+                if (value == null ||
+                    double.tryParse(value.replaceAll('.', '')) == null ||
+                    double.parse(value.replaceAll('.', '')) < 0) {
                   return 'Masukkan harga yang valid.';
                 }
                 return null;
               },
               onSaved: (value) => _sellingPrice = double.parse(value!.replaceAll('.', '')),
             ),
+            if (widget.activePromo != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  'Harga promo diterapkan!',
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
+                ),
+              )
           ],
-        ), 
+        ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Batal')),

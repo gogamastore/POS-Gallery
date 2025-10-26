@@ -84,6 +84,7 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
         productIds: (orderData['productIds'] as List).cast<String>(),
         subtotal: orderData['subtotal'],
         total: orderData['total'],
+        totalDiscount: orderData['totalDiscount'] ?? 0, // Perbaikan
         paymentMethod: orderData['paymentMethod'],
         status: orderData['status'],
         kasir: orderData['kasir'] ?? 'System',
@@ -190,6 +191,7 @@ final orderDetailsProvider =
     productIds: order.productIds,
     subtotal: order.subtotal,
     total: order.total,
+    totalDiscount: order.totalDiscount, // Perbaikan
     shippingFee: order.shippingFee,
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,

@@ -328,6 +328,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     const Divider(height: 20),
                     _buildTotalRow(
                         'Subtotal', formatCurrency(order.subtotal.toDouble())),
+                    if (order.totalDiscount > 0)
+                      _buildTotalRow(
+                        'Total Diskon',
+                        '- ${formatCurrency(order.totalDiscount.toDouble())}',
+                        isDiscount: true,
+                      ),
+                    const Divider(height: 20, thickness: 1.5),
                     _buildTotalRow(
                         'Total', formatCurrency(order.total.toDouble()),
                         isTotal: true),
@@ -429,10 +436,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     );
   }
 
-  Widget _buildTotalRow(String label, String value, {bool isTotal = false}) {
+  Widget _buildTotalRow(String label, String value,
+      {bool isTotal = false, bool isDiscount = false}) {
     final style = TextStyle(
       fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
       fontSize: isTotal ? 18 : 16,
+      color: isDiscount ? Colors.redAccent : null,
     );
     return Padding(
       padding: EdgeInsets.symmetric(vertical: isTotal ? 6 : 4),
@@ -440,8 +449,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label,
-              style:
-                  style.copyWith(color: isTotal ? null : Colors.grey.shade600)),
+              style: style.copyWith(
+                  color: isTotal
+                      ? null
+                      : (isDiscount
+                          ? Colors.redAccent
+                          : Colors.grey.shade600))),
           Text(value, style: style),
         ],
       ),
@@ -450,6 +463,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
   Widget _buildProductTile(Map<String, dynamic> product) {
     final imageUrl = product['imageUrl'] as String?;
+    final price = (product['price'] as num).toDouble();
+    final originalPrice = (product['originalPrice'] as num?)?.toDouble();
+    final bool hasDiscount = originalPrice != null && originalPrice > price;
+
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: imageUrl != null && imageUrl.isNotEmpty
@@ -466,11 +483,23 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             )
           : const Icon(Ionicons.cube_outline, size: 40),
       title: Text(product['name'] ?? 'Nama Produk Tidak Ada'),
-      subtitle: Text(
-          '${product['quantity']} x ${formatCurrency((product['price'] as num).toDouble())}'),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${product['quantity']} x ${formatCurrency(price)}'),
+          if (hasDiscount)
+            Text(
+              '(Harga Sebelum Diskon: ${formatCurrency(originalPrice)})',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                decoration: TextDecoration.lineThrough,
+              ),
+            ),
+        ],
+      ),
       trailing: Text(
-        formatCurrency((product['quantity'] as int) *
-            (product['price'] as num).toDouble()),
+        formatCurrency((product['quantity'] as int) * price),
         style: const TextStyle(fontWeight: FontWeight.w500),
       ),
     );

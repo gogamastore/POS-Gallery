@@ -9,6 +9,7 @@ import '../../providers/pos_provider.dart';
 import '../../providers/customer_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/pos_service.dart';
+import '../orders/order_detail_screen.dart'; // Import OrderDetailScreen
 
 class ProcessPosScreen extends ConsumerStatefulWidget {
   const ProcessPosScreen({super.key});
@@ -22,6 +23,17 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
   Customer? _selectedCustomer;
   String _paymentMethod = 'cash';
   bool _isProcessing = false;
+
+  double _calculateTotalDiscount(WidgetRef ref) {
+    final cartItems = ref.read(posCartProvider);
+    double totalDiscount = 0;
+    for (var item in cartItems) {
+      if (item.PosPrice < item.product.price) {
+        totalDiscount += (item.product.price - item.PosPrice) * item.quantity;
+      }
+    }
+    return totalDiscount;
+  }
 
   Future<void> _showCustomerSelectionDialog() async {
     final selected = await showDialog<Customer>(
@@ -41,13 +53,13 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
 
     final cartItems = ref.read(posCartProvider);
     final totalAmount = ref.read(posTotalProvider);
+    final totalDiscount = _calculateTotalDiscount(ref);
     final user = ref.read(userDataProvider).value;
     final kasirName = user?.name ?? 'Kasir';
-    final navigator = Navigator.of(context);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     if (cartItems.isEmpty) {
-      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Keranjang kosong.')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Keranjang kosong.')));
       return;
     }
 
@@ -57,15 +69,18 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
       await PosService().saveOrderAsProcessing(
         items: cartItems,
         totalAmount: totalAmount,
+        totalDiscount: totalDiscount,
         paymentMethod: _paymentMethod,
         kasir: kasirName,
         customer: _selectedCustomer,
       );
       ref.read(posCartProvider.notifier).clearCart();
-      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Pesanan disimpan sebagai Draf.')));
-      navigator.popUntil((route) => route.isFirst);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pesanan disimpan sebagai Draf.')));
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
-      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Gagal menyimpan draf: $e')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan draf: $e')));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -78,27 +93,25 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
 
     final cartItems = ref.read(posCartProvider);
     final totalAmount = ref.read(posTotalProvider);
+    final totalDiscount = _calculateTotalDiscount(ref);
     final user = ref.read(userDataProvider).value;
     final kasirName = user?.name ?? 'Kasir';
 
-    final navigator = Navigator.of(context);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-
     if (cartItems.isEmpty) {
-      scaffoldMessenger.showSnackBar(
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Keranjang tidak boleh kosong!')),
       );
       return;
     }
 
-    setState(() {
-      _isProcessing = true;
-    });
+    setState(() => _isProcessing = true);
 
     try {
-      await PosService().processSaleTransaction(
+      final String orderId = await PosService().processSaleTransaction(
         items: cartItems,
         totalAmount: totalAmount,
+        totalDiscount: totalDiscount,
         paymentMethod: _paymentMethod,
         kasir: kasirName,
         customer: _selectedCustomer,
@@ -106,14 +119,23 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
 
       ref.read(posCartProvider.notifier).clearCart();
 
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(content: Text('Transaksi penjualan berhasil diproses dan disimpan!')),
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaksi berhasil! Mengalihkan ke detail pesanan...')),
       );
-      
-      navigator.popUntil((route) => route.isFirst);
+
+      // Navigasi ke OrderDetailScreen
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (context) => OrderDetailScreen(orderId: orderId),
+        ),
+        (route) => route.isFirst, // Hapus semua halaman sebelumnya sampai ke halaman utama
+      );
 
     } catch (e) {
-      scaffoldMessenger.showSnackBar(
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Gagal memproses transaksi: $e')),
       );
     } finally {
@@ -127,12 +149,14 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final currencyFormatter =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('Proses Penjualan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+        title: const Text('Proses Penjualan',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
         backgroundColor: Colors.white,
         elevation: 1,
         foregroundColor: const Color(0xFF2C3E50),
@@ -150,7 +174,9 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
                     children: [
                       Expanded(flex: 2, child: _buildDetailsSection()),
                       const SizedBox(width: 16),
-                      Expanded(flex: 1, child: _buildSummarySection(currencyFormatter)),
+                      Expanded(
+                          flex: 1,
+                          child: _buildSummarySection(currencyFormatter)),
                     ],
                   );
                 } else {
@@ -179,10 +205,14 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('1. Detail Customer & Pembayaran', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50))),
+            const Text('1. Detail Customer & Pembayaran',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2C3E50))),
             const Divider(height: 32),
-
-            const Text('Customer (Member)', style: TextStyle(fontWeight: FontWeight.w500)),
+            const Text('Customer (Member)',
+                style: TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             InkWell(
               onTap: _showCustomerSelectionDialog,
@@ -193,15 +223,17 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
                 ),
                 child: Text(
                   _selectedCustomer?.name ?? 'Pilih Customer (Opsional)',
-                  style: _selectedCustomer == null ? const TextStyle(color: Colors.black54) : null,
+                  style: _selectedCustomer == null
+                      ? const TextStyle(color: Colors.black54)
+                      : null,
                 ),
               ),
             ),
             const SizedBox(height: 24),
-
-            const Text('Metode Pembayaran', style: TextStyle(fontWeight: FontWeight.w500)),
+            const Text('Metode Pembayaran',
+                style: TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
-             RadioMenuButton<String>(
+            RadioMenuButton<String>(
               value: 'cash',
               groupValue: _paymentMethod,
               onChanged: (String? value) {
@@ -221,7 +253,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
               },
               child: const Text('Bank Transfer'),
             ),
-             RadioMenuButton<String>(
+            RadioMenuButton<String>(
               value: 'qris',
               groupValue: _paymentMethod,
               onChanged: (String? value) {
@@ -240,6 +272,8 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
   Widget _buildSummarySection(NumberFormat currencyFormatter) {
     final cartItems = ref.watch(posCartProvider);
     final totalAmount = ref.watch(posTotalProvider);
+    final totalDiscount = _calculateTotalDiscount(ref);
+    final subtotal = totalAmount + totalDiscount;
 
     return Card(
       elevation: 1,
@@ -249,33 +283,80 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('2. Ringkasan Penjualan', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50))),
+            const Text('2. Ringkasan Penjualan',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2C3E50))),
             const Divider(height: 32),
             if (cartItems.isEmpty)
               const Center(child: Text('Keranjang kosong.'))
             else
-              ...cartItems.map((item) => ListTile(
-                    title: Text(item.product.name),
-                    subtitle: Text('${item.quantity} x ${currencyFormatter.format(item.PosPrice)}'),
-                    trailing: Text(currencyFormatter.format(item.subtotal), style: const TextStyle(fontWeight: FontWeight.w500)),
-                  )),
+              ...cartItems.map((item) {
+                final bool hasDiscount = item.PosPrice < item.product.price;
+                return ListTile(
+                  title: Text(item.product.name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          '${item.quantity} x ${currencyFormatter.format(item.PosPrice)}'),
+                      if (hasDiscount)
+                        Text(
+                          '(Harga Sebelum Diskon: ${currencyFormatter.format(item.product.price)})',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        ),
+                    ],
+                  ),
+                  trailing: Text(currencyFormatter.format(item.subtotal),
+                      style: const TextStyle(fontWeight: FontWeight.w500)),
+                );
+              }),
             const Divider(height: 32),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Total Penjualan', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                Text(currencyFormatter.format(totalAmount), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF27AE60))),
+                const Text('Subtotal', style: TextStyle(fontSize: 16)),
+                Text(currencyFormatter.format(subtotal),
+                    style: const TextStyle(fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total Diskon',
+                    style: TextStyle(fontSize: 16, color: Colors.redAccent)),
+                Text('- ${currencyFormatter.format(totalDiscount)} ',
+                    style:
+                        const TextStyle(fontSize: 16, color: Colors.redAccent)),
+              ],
+            ),
+            const Divider(height: 24, thickness: 1.5),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total Akhir',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(currencyFormatter.format(totalAmount),
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF27AE60))),
               ],
             ),
             const SizedBox(height: 24),
             if (_isProcessing)
               const Center(child: CircularProgressIndicator())
             else
-             Row(
+              Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: cartItems.isNotEmpty ? _saveAsProcessing : null,
+                      onPressed:
+                          cartItems.isNotEmpty ? _saveAsProcessing : null,
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         side: const BorderSide(color: Colors.grey),
@@ -287,12 +368,14 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: cartItems.isNotEmpty ? _processTransaction : null,
+                      onPressed:
+                          cartItems.isNotEmpty ? _processTransaction : null,
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         backgroundColor: const Color(0xFF27AE60),
                         foregroundColor: Colors.white,
-                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        textStyle: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                         disabledBackgroundColor: Colors.grey,
                       ),
                       child: const Text('Konfirmasi'),
@@ -311,10 +394,12 @@ class _CustomerSelectionDialog extends ConsumerStatefulWidget {
   const _CustomerSelectionDialog();
 
   @override
-  __CustomerSelectionDialogState createState() => __CustomerSelectionDialogState();
+  __CustomerSelectionDialogState createState() =>
+      __CustomerSelectionDialogState();
 }
 
-class __CustomerSelectionDialogState extends ConsumerState<_CustomerSelectionDialog> {
+class __CustomerSelectionDialogState
+    extends ConsumerState<_CustomerSelectionDialog> {
   String _searchQuery = '';
 
   Future<void> _showAddCustomerDialog() async {
@@ -357,9 +442,14 @@ class __CustomerSelectionDialogState extends ConsumerState<_CustomerSelectionDia
             Expanded(
               child: customersAsync.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (err, stack) => Center(child: Text('Gagal memuat customer: $err')),
+                error: (err, stack) =>
+                    Center(child: Text('Gagal memuat customer: $err')),
                 data: (customers) {
-                  final filteredCustomers = customers.where((s) => s.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+                  final filteredCustomers = customers
+                      .where((s) => s.name
+                          .toLowerCase()
+                          .contains(_searchQuery.toLowerCase()))
+                      .toList();
 
                   if (filteredCustomers.isEmpty) {
                     return Center(
@@ -384,7 +474,9 @@ class __CustomerSelectionDialogState extends ConsumerState<_CustomerSelectionDia
                       final customer = filteredCustomers[index];
                       return ListTile(
                         title: Text(customer.name),
-                        subtitle: customer.address != null ? Text(customer.address!) : null,
+                        subtitle: customer.address != null
+                            ? Text(customer.address!)
+                            : null,
                         onTap: () => Navigator.of(context).pop(customer),
                       );
                     },
@@ -405,8 +497,11 @@ class __CustomerSelectionDialogState extends ConsumerState<_CustomerSelectionDia
   }
 }
 
-final addCustomerProvider = FutureProvider.family<void, Customer>((ref, customer) async {
-  await FirebaseFirestore.instance.collection('customers').add(customer.toFirestore());
+final addCustomerProvider =
+    FutureProvider.family<void, Customer>((ref, customer) async {
+  await FirebaseFirestore.instance
+      .collection('customers')
+      .add(customer.toFirestore());
 });
 
 class _AddCustomerDialog extends ConsumerStatefulWidget {
@@ -456,7 +551,8 @@ class __AddCustomerDialogState extends ConsumerState<_AddCustomerDialog> {
         await ref.read(addCustomerProvider(newCustomer).future);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Customer baru berhasil ditambahkan!')),
+            const SnackBar(
+                content: Text('Customer baru berhasil ditambahkan!')),
           );
           Navigator.of(context).pop(newCustomer);
         }
@@ -474,7 +570,6 @@ class __AddCustomerDialogState extends ConsumerState<_AddCustomerDialog> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -487,7 +582,9 @@ class __AddCustomerDialogState extends ConsumerState<_AddCustomerDialog> {
             TextFormField(
               controller: _nameController,
               decoration: const InputDecoration(labelText: 'Nama Customer'),
-              validator: (value) => value == null || value.isEmpty ? 'Nama tidak boleh kosong' : null,
+              validator: (value) => value == null || value.isEmpty
+                  ? 'Nama tidak boleh kosong'
+                  : null,
               autofocus: true,
             ),
             TextFormField(
@@ -496,14 +593,17 @@ class __AddCustomerDialogState extends ConsumerState<_AddCustomerDialog> {
             ),
             TextFormField(
               controller: _whatsappController,
-              decoration: const InputDecoration(labelText: 'No. WhatsApp (Opsional)'),
+              decoration:
+                  const InputDecoration(labelText: 'No. WhatsApp (Opsional)'),
               keyboardType: TextInputType.phone,
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Batal')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Batal')),
         if (_isSaving)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.0),

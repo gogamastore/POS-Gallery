@@ -22,6 +22,7 @@ class Order {
   // Financials
   final num subtotal;
   final num total;
+  final num totalDiscount;
   final num? shippingFee;
 
   // Payment Info
@@ -52,6 +53,7 @@ class Order {
     required this.productIds,
     required this.subtotal,
     required this.total,
+    required this.totalDiscount,
     this.shippingFee,
     required this.paymentMethod,
     required this.paymentStatus,
@@ -88,6 +90,7 @@ class Order {
       productIds: List<String>.from(data['productIds'] ?? []),
       subtotal: data['subtotal'] as num? ?? 0,
       total: data['total'] as num? ?? 0,
+      totalDiscount: data['totalDiscount'] as num? ?? 0,
       shippingFee: data['shippingFee'] as num?,
       paymentMethod: data['paymentMethod'] as String? ?? 'N/A',
       paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
@@ -119,6 +122,7 @@ class Order {
       productIds: productIds,
       subtotal: subtotal,
       total: total,
+      totalDiscount: totalDiscount,
       shippingFee: shippingFee,
       paymentMethod: paymentMethod,
       paymentStatus: paymentStatus,
@@ -146,6 +150,7 @@ class Order {
       'productIds': productIds,
       'subtotal': subtotal,
       'total': total,
+      'totalDiscount': totalDiscount,
       'shippingFee': shippingFee,
       'paymentMethod': paymentMethod,
       'paymentStatus': paymentStatus,

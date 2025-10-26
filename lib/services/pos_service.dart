@@ -10,6 +10,7 @@ class PosService {
   Future<void> saveOrderAsProcessing({
     required List<PosCartItem> items,
     required double totalAmount,
+    required double totalDiscount,
     required String paymentMethod,
     required String kasir,
     Customer? customer,
@@ -24,6 +25,7 @@ class PosService {
               'imageUrl': item.product.image ?? '',
               'quantity': item.quantity,
               'price': item.PosPrice, // Menggunakan harga dari keranjang
+              'originalPrice': item.product.price,
               'sku': item.product.sku,
             })
         .toList();
@@ -43,12 +45,14 @@ class PosService {
     }
 
     final Order newOrder = Order(
+      id: orderRef.id, // Menyimpan ID yang digenerate
       date: Timestamp.now(),
       createdAt: Timestamp.now(),
       products: productsData,
       productIds: items.map((item) => item.product.id).toList(),
-      subtotal: totalAmount,
+      subtotal: totalAmount + totalDiscount, 
       total: totalAmount,
+      totalDiscount: totalDiscount,
       paymentMethod: paymentMethod,
       status: 'processing', 
       kasir: kasir,
@@ -65,9 +69,10 @@ class PosService {
     await orderRef.set(newOrder.toFirestore());
   }
 
-  Future<void> processSaleTransaction({
+  Future<String> processSaleTransaction({
     required List<PosCartItem> items,
     required double totalAmount,
+    required double totalDiscount,
     required String paymentMethod,
     required String kasir,
     Customer? customer,
@@ -83,6 +88,7 @@ class PosService {
               'imageUrl': item.product.image ?? '',
               'quantity': item.quantity,
               'price': item.PosPrice, // Menggunakan harga dari keranjang
+              'originalPrice': item.product.price,
               'sku': item.product.sku,
             })
         .toList();
@@ -102,12 +108,14 @@ class PosService {
     }
 
     final Order newOrder = Order(
+      id: orderRef.id, // Menyimpan ID yang digenerate
       date: Timestamp.now(),
       createdAt: Timestamp.now(),
       products: productsData,
       productIds: items.map((item) => item.product.id).toList(),
-      subtotal: totalAmount,
+      subtotal: totalAmount + totalDiscount,
       total: totalAmount,
+      totalDiscount: totalDiscount,
       paymentMethod: paymentMethod,
       status: 'success',
       kasir: kasir,
@@ -132,5 +140,6 @@ class PosService {
     }
 
     await batch.commit();
+    return orderRef.id; // Mengembalikan ID pesanan
   }
 }
