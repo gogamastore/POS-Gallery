@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:ionicons/ionicons.dart';
+
 import '../customers/customer_list_screen.dart';
 import 'banners_screen.dart';
 import 'promo_screen.dart';
 import 'staff_management_screen.dart';
 import 'supplier_management_screen.dart';
 import 'trending_products_screen.dart';
-import '../ai/ai_stock_suggestion_screen.dart'; // Import halaman AI
+import '../ai/ai_stock_suggestion_screen.dart';
+import 'printer_settings_screen.dart'; // PENAMBAHAN: Impor halaman pengaturan printer
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -32,6 +35,15 @@ class SettingsScreen extends StatelessWidget {
             subtitle: 'Kelola data supplier Anda',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SupplierManagementScreen())),
           ),
+          const Divider(), // Pemisah visual
+          _buildMenuItem(
+            context,
+            icon: Ionicons.print_outline, // PENAMBAHAN: Ikon baru
+            title: 'Pengaturan Cetak', // PENAMBAHAN: Judul menu baru
+            subtitle: 'Atur printer utama untuk struk', // PENAMBAHAN: Subtitle baru
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PrinterSettingsScreen())), // PENAMBAHAN: Navigasi baru
+          ),
+          const Divider(), // Pemisah visual
           // --- MENU AI DITAMBAHKAN DI SINI ---
           _buildMenuItem(
             context,
