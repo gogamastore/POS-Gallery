@@ -1,21 +1,17 @@
-import 'dart:async';
-import 'dart:typed_data';
-import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/order.dart';
 import '../../providers/order_provider.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/product_provider.dart';
-import '../../services/printing_service.dart';
 import '../../utils/formatter.dart';
 import '../pos/process_pos_screen.dart';
 import 'edit_order_screen.dart';
+import 'print_page_screen.dart'; // Import halaman print yang baru
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
   final String orderId;
@@ -26,170 +22,6 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
-  final PrintingService _printingService = PrintingService();
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-  Future<void> _handlePrint(Order order) async {
-    final prefs = await SharedPreferences.getInstance();
-    final address = prefs.getString('default_printer_address');
-    final name = prefs.getString('default_printer_name');
-
-    if (address != null && address.isNotEmpty && name != null) {
-      // create a minimal device object expected by BLE lib (may vary per platform)
-      final dynamic defaultDevice = {
-        'name': name,
-        'address': address,
-      };
-      await _connectAndPrint(defaultDevice, order);
-    } else {
-      if (!mounted) return;
-      await _showPrintDialog(context, order);
-    }
-  }
-
-  Future<void> _connectAndPrint(dynamic device, Order order) async {
-    if (!mounted) return; // Guard before first async gap
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Dialog(
-        child: Padding(
-          padding: EdgeInsets.all(20.0),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('Menghubungkan & Mencetak...'),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    try {
-      // Attempt to connect using the printing service (best-effort)
-      await _printingService.connectToDevice(device);
-
-      // Build ESC/POS bytes using service (reads paper size from prefs if set)
-      final prefs = await SharedPreferences.getInstance();
-      final paperSize = prefs.getInt('printer_paper_size') ?? 80;
-      final bytes =
-          await _printingService.buildReceiptBytes(order, paperSize: paperSize);
-
-      // Try writing bytes to device using bluetooth_low_energy package.
-      final wrote = await _tryWriteBytes(device, bytes);
-
-      // Disconnect best-effort
-      try {
-        await _printingService.disconnect();
-      } catch (_) {}
-
-      Navigator.of(context, rootNavigator: true).pop();
-
-      if (wrote) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Struk berhasil dikirim ke printer.')),
-        );
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  'Gagal mengirim struk ke printer. Pastikan UUID write benar.')),
-        );
-      }
-    } catch (e, s) {
-      developer.log('Error printing: $e', stackTrace: s);
-      if (!mounted) return; // Guard in catch block
-      Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saat mencetak: $e')),
-      );
-    }
-  }
-
-  /// Best-effort writer: tries several common write methods exposed by BLE
-  /// libraries. Returns true if any attempt succeeds.
-  Future<bool> _tryWriteBytes(dynamic device, Uint8List bytes) async {
-    // first try using saved service/characteristic UUID via PrintingService
-    try {
-      final saved = await _printingService.writeUsingSavedUuid(device, bytes);
-      if (saved) return true;
-    } catch (_) {}
-
-    // device-level methods
-    try {
-      await device.write(bytes);
-      return true;
-    } catch (_) {}
-
-    try {
-      await device.writeCharacteristic(bytes);
-      return true;
-    } catch (_) {}
-
-    try {
-      await device.writeBytes(bytes);
-      return true;
-    } catch (_) {}
-
-    // discover services via device object and try characteristics
-    try {
-      dynamic services;
-      try {
-        services = await device.discoverServices?.call();
-      } catch (_) {
-        try {
-          services = device.services ?? device.discoveredServices;
-        } catch (_) {
-          services = null;
-        }
-      }
-
-      if (services != null) {
-        for (var svc in services) {
-          final characteristics = svc?.characteristics ?? svc?.chars ?? [];
-          for (var ch in characteristics) {
-            try {
-              await ch.write(bytes);
-              return true;
-            } catch (_) {}
-            try {
-              await ch.writeWithoutResponse(bytes);
-              return true;
-            } catch (_) {}
-          }
-        }
-      }
-    } catch (_) {}
-
-    return false;
-  }
-
-  Future<void> _showPrintDialog(BuildContext context, Order order) async {
-    if (!mounted) return;
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return _BluetoothDeviceDialog(
-          order: order,
-          printingService: _printingService,
-          onDeviceSelected: (device) async {
-            Navigator.of(dialogContext).pop();
-            await _connectAndPrint(device, order);
-          },
-        );
-      },
-    );
-  }
-
   Future<void> _processOrder(
       BuildContext context, WidgetRef ref, Order order) async {
     ref.read(posCartProvider.notifier).clearCart();
@@ -197,10 +29,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final allProducts = productsAsyncValue.asData?.value;
 
     if (allProducts == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gagal memuat data produk. Coba lagi.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal memuat data produk. Coba lagi.')),
+        );
+      }
       return;
     }
 
@@ -213,19 +46,15 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               orderProduct['quantity'] as int,
               (orderProduct['price'] as num).toDouble(),
             );
-      } catch (e, s) {
-        developer.log(
-            'Produk dengan ID ${orderProduct['productId']} tidak ditemukan lagi.',
-            name: 'OrderDetail',
-            error: e,
-            stackTrace: s);
+      } catch (e) {
+        // Log or handle the case where the product is not found
         continue;
       }
     }
 
     await ref.read(orderActionsProvider.notifier).deleteOrder(order.id!);
 
-    if (context.mounted) {
+    if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const ProcessPosScreen()),
       );
@@ -247,7 +76,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       IconButton(
                         icon: const Icon(Ionicons.print_outline),
                         tooltip: 'Cetak Struk',
-                        onPressed: () => _handlePrint(order),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  PrintPageScreen(order: order),
+                            ),
+                          );
+                        },
                       ),
                       IconButton(
                         icon: const Icon(Ionicons.create_outline),
@@ -550,127 +386,16 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           TextButton(
             child: const Text('Ya, Batalkan'),
             onPressed: () {
-              ref
-                  .read(orderActionsProvider.notifier)
-                  .updateOrderStatus(order.id!, 'Cancelled');
-              Navigator.of(ctx).pop();
+              if (mounted) {
+                ref
+                    .read(orderActionsProvider.notifier)
+                    .updateOrderStatus(order.id!, 'Cancelled');
+                Navigator.of(ctx).pop();
+              }
             },
           ),
         ],
       ),
-    );
-  }
-}
-
-class _BluetoothDeviceDialog extends StatefulWidget {
-  final Order order;
-  final PrintingService printingService;
-  final Function(dynamic) onDeviceSelected;
-
-  const _BluetoothDeviceDialog(
-      {required this.order,
-      required this.printingService,
-      required this.onDeviceSelected});
-
-  @override
-  State<_BluetoothDeviceDialog> createState() => _BluetoothDeviceDialogState();
-}
-
-class _BluetoothDeviceDialogState extends State<_BluetoothDeviceDialog> {
-  StreamSubscription<List<dynamic>>? _scanSubscription;
-  List<dynamic> _devices = [];
-  bool _isScanning = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _startScan();
-  }
-
-  @override
-  void dispose() {
-    _scanSubscription?.cancel();
-    widget.printingService.stopScan();
-    super.dispose();
-  }
-
-  void _startScan() {
-    if (!mounted) return;
-    setState(() {
-      _isScanning = true;
-      _devices = [];
-    });
-    widget.printingService.startScan();
-    _scanSubscription = widget.printingService.scanResults.listen((devices) {
-      if (!mounted) return;
-      setState(() {
-        _devices = devices;
-        _isScanning = false;
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text('Pilih Printer'),
-          if (_isScanning)
-            const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2))
-          else
-            IconButton(
-                icon: const Icon(Ionicons.refresh),
-                onPressed: _startScan,
-                tooltip: 'Scan Ulang')
-        ],
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: _devices.isEmpty
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    _isScanning
-                        ? 'Mencari printer...'
-                        : 'Tidak ada printer ter-pairing. Pastikan Bluetooth menyala.',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              )
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: _devices.length,
-                itemBuilder: (context, index) {
-                  final device = _devices[index];
-                  final name = device?.name ??
-                      device?.localName ??
-                      device?.deviceName ??
-                      'Unknown Device';
-                  final address = device?.address ??
-                      device?.id ??
-                      device?.deviceId ??
-                      'No Address';
-                  return ListTile(
-                    leading: const Icon(Ionicons.print_outline),
-                    title: Text(name.toString()),
-                    subtitle: Text(address.toString()),
-                    onTap: () => widget.onDeviceSelected(device),
-                  );
-                },
-              ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Batal'),
-        ),
-      ],
     );
   }
 }

@@ -9,14 +9,16 @@ import 'profile/profile_screen.dart'; // Import ProfileScreen
 import 'pos/pos_screen.dart';
 
 class MainTabController extends ConsumerStatefulWidget {
-  const MainTabController({super.key});
+  final int initialIndex;
+  const MainTabController({super.key, this.initialIndex = 0});
 
   @override
   MainTabControllerState createState() => MainTabControllerState();
 }
 
 class MainTabControllerState extends ConsumerState<MainTabController> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
+
   static final List<Widget> _widgetOptions = <Widget>[
     const DashboardScreen(),
     const PosScreen(), // Ganti placeholder dengan PosScreen
@@ -24,6 +26,12 @@ class MainTabControllerState extends ConsumerState<MainTabController> {
     const PurchasesScreen(), // Ganti placeholder dengan PurchasesScreen
     const ProfileScreen(), // Ganti placeholder dengan ProfileScreen
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex;
+  }
 
   void _onItemTapped(int index) {
     setState(() {

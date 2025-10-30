@@ -1,10 +1,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-package="store.gallerymakassar.app">
+    package="store.gallerymakassar.app">
 
-    <!-- PERMINTAAN IZIN BLUETOOTH -->
+    <!-- Permissions needed for USB, network and Bluetooth printing -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <!-- Android 12+ Bluetooth runtime permissions -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <!-- Location permission sometimes required for BLE scanning on older Android versions -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Allow optional USB host feature (not required on all devices) -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <application
         android:label="Gallery POS"
@@ -37,6 +48,29 @@ package="store.gallerymakassar.app">
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Receiver required by thermal_printer to detect USB device attach/permission -->
+        <receiver
+            android:name="com.codingdevs.thermal_printer.usb.UsbReceiver"
+            android:exported="false">
+
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.ACTION_USB_PERMISSION" />
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- FileProvider for safely sharing files if needed by native code -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

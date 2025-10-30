@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/printing_service.dart';
+import 'usb_printer_list_screen.dart';
 
 class PrinterSettingsScreen extends StatefulWidget {
   const PrinterSettingsScreen({super.key});
@@ -13,119 +15,96 @@ class PrinterSettingsScreen extends StatefulWidget {
 }
 
 class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
-  final PrintingService _printingService = PrintingService();
+  final PrintingService _printingService = getPrintingService();
   StreamSubscription<List<dynamic>>? _scanSubscription;
   List<dynamic> _devices = [];
   bool _isScanning = false;
   String? _defaultPrinterAddress;
   String? _defaultPrinterName;
-  int _paperSize = 80; // default, can be 58 or 80
+  int _paperSize = 80;
+  String _connectionType = 'bluetooth';
 
   @override
   void initState() {
     super.initState();
-    _loadDefaultPrinter();
-    _startScan();
+    if (!kIsWeb) {
+      _loadSettings().then((_) => _startScan());
+    }
   }
 
   @override
   void dispose() {
     _scanSubscription?.cancel();
-    _printingService.stopScan();
+    if (!kIsWeb) {
+      _printingService.stopScan();
+    }
     super.dispose();
   }
 
-  Future<void> _loadDefaultPrinter() async {
+  Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       _defaultPrinterAddress = prefs.getString('default_printer_address');
       _defaultPrinterName = prefs.getString('default_printer_name');
       _paperSize = prefs.getInt('printer_paper_size') ?? 80;
+      _connectionType =
+          prefs.getString('printer_connection_type') ?? 'bluetooth';
     });
   }
 
   void _startScan() {
-    if (!mounted) return;
+    if (kIsWeb || !mounted) return;
+
+    _scanSubscription?.cancel();
+
     setState(() {
       _isScanning = true;
       _devices = [];
     });
 
-    _printingService.startScan();
-    _scanSubscription = _printingService.scanResults.listen((devices) {
-      if (!mounted) return;
+    if (_connectionType == 'bluetooth') {
+      _printingService.startScan(isBle: false); // For classic bluetooth
+      _scanSubscription = _printingService.scanResults.listen((devices) {
+        if (!mounted) return;
+        setState(() {
+          _devices = devices;
+          _isScanning = false; // scan finishes when it finds devices
+        });
+      }, onError: (e) {
+        if (!mounted) return;
+        setState(() {
+          _isScanning = false;
+        });
+      });
+    } else {
+      // For USB, we handle scanning in a separate screen
       setState(() {
-        _devices = devices;
         _isScanning = false;
       });
-    });
+    }
   }
 
   Future<void> _setDefaultPrinter(dynamic device) async {
+    if (kIsWeb) return;
+
+    final String address = device.address ?? '';
+    final String name = device.name ?? 'Unknown';
+
     final prefs = await SharedPreferences.getInstance();
-
-    // device object shape may vary; try common fields
-    final address = device?.address ?? device?.id ?? device?.deviceId ?? device?.id?.toString();
-    final name = device?.name ?? device?.localName ?? device?.deviceName ?? 'Unknown Device';
-
-    if (address == null) return;
-
-    await prefs.setString('default_printer_address', address.toString());
-    await prefs.setString('default_printer_name', name.toString());
+    await prefs.setString('default_printer_address', address);
+    await prefs.setString('default_printer_name', name);
 
     if (!mounted) return;
 
     setState(() {
-      _defaultPrinterAddress = address.toString();
-      _defaultPrinterName = name.toString();
+      _defaultPrinterAddress = address;
+      _defaultPrinterName = name;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$name ditetapkan sebagai printer utama.')),
     );
-  }
-
-  Future<void> _setDefaultPrinterAndDiscover(dynamic device) async {
-    if (!mounted) return;
-
-    // Show progress
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Dialog(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [CircularProgressIndicator(), SizedBox(width: 16), Text('Menghubungkan dan menyimpan UUID...')],
-          ),
-        ),
-      ),
-    );
-
-    bool saved = false;
-    try {
-      saved = await _printingService.discoverAndSaveWriteCharacteristic(device);
-    } catch (e) {
-      saved = false;
-    }
-
-    // Always set default printer even if UUID discovery failed
-    await _setDefaultPrinter(device);
-
-    Navigator.of(context, rootNavigator: true).pop();
-
-    if (!mounted) return;
-
-    if (saved) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('UUID printer berhasil disimpan.')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tidak dapat menemukan UUID writable. Simpan manual jika perlu.')),
-      );
-    }
   }
 
   Future<void> _setPaperSize(int size) async {
@@ -140,72 +119,131 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
     );
   }
 
-  void _onDeviceTap(dynamic device) {
-    // show options: set default or set default + discover UUID
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) {
-        final name = device?.name ?? device?.localName ?? device?.deviceName ?? 'Unknown Device';
-        final address = device?.address ?? device?.id ?? device?.deviceId ?? 'No Address';
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+  Future<void> _setConnectionType(String? type) async {
+    if (type == null) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('printer_connection_type', type);
+    if (!mounted) return;
+    setState(() {
+      _connectionType = type;
+      _devices = []; // Clear device list when changing type
+    });
+
+    if (type == 'bluetooth') {
+      _startScan();
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Tipe koneksi diatur ke ${type.toUpperCase()}')),
+    );
+  }
+
+  Widget _buildConnectionTypeSelector() {
+    return Card(
+      margin: const EdgeInsets.all(8),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Text('Tipe Koneksi',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            ListTile(
+              title: const Text('Bluetooth'),
+              leading: Radio<String>(
+                value: 'bluetooth',
+                groupValue: _connectionType,
+                onChanged: _setConnectionType,
+              ),
+              onTap: () => _setConnectionType('bluetooth'),
+            ),
+            ListTile(
+              title: const Text('USB'),
+              leading: Radio<String>(
+                value: 'usb',
+                groupValue: _connectionType,
+                onChanged: _setConnectionType,
+              ),
+              onTap: () => _setConnectionType('usb'),
+            ),
+            if (_connectionType == 'usb')
               ListTile(
-                leading: const Icon(Ionicons.star),
-                title: Text('Set sebagai printer utama'),
-                subtitle: Text('$name — $address'),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _setDefaultPrinter(device);
+                title: const Text('Pilih & Pasangkan Printer USB'),
+                subtitle: Text(_defaultPrinterName != null
+                    ? 'Terpilih: $_defaultPrinterName'
+                    : 'Ketuk untuk memilih'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  if (!mounted) return;
+                  final selectedDevice = await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const UsbPrinterListScreen(),
+                    ),
+                  );
+                  if (selectedDevice != null) {
+                    await _setDefaultPrinter(selectedDevice);
+                  }
                 },
               ),
-              ListTile(
-                leading: const Icon(Ionicons.save_outline),
-                title: const Text('Set dan simpan UUID (direkomendasikan)'),
-                subtitle: const Text('Temukan characteristic writable dan simpan secara otomatis'),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _setDefaultPrinterAndDiscover(device);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Ionicons.close),
-                title: const Text('Batal'),
-                onTap: () => Navigator.of(ctx).pop(),
-              ),
-            ],
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Pengaturan Printer')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24.0),
+            child: Text(
+              'Pengaturan printer tidak tersedia di versi web.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, color: Colors.grey),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pengaturan Printer'),
         actions: [
-          if (_isScanning)
-            const Padding(
-              padding: EdgeInsets.only(right: 16.0),
-              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-            )
-          else
-            IconButton(
-              icon: const Icon(Ionicons.refresh_outline),
-              onPressed: _startScan,
-              tooltip: 'Scan Ulang',
-            ),
+          if (_connectionType == 'bluetooth')
+            _isScanning
+                ? const Padding(
+                    padding: EdgeInsets.only(right: 16.0),
+                    child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                : IconButton(
+                    icon: const Icon(Ionicons.refresh_outline),
+                    onPressed: _startScan,
+                    tooltip: 'Scan Ulang',
+                  ),
         ],
       ),
-      body: Column(
+      body: ListView(
         children: [
+          _buildConnectionTypeSelector(),
           ListTile(
             title: const Text('Printer Default'),
-            subtitle: Text(_defaultPrinterName ?? _defaultPrinterAddress ?? 'Belum dipilih'),
-            trailing: _defaultPrinterAddress != null ? const Icon(Ionicons.star, color: Colors.amber) : null,
+            subtitle: Text(_defaultPrinterName ??
+                _defaultPrinterAddress ??
+                'Belum dipilih'),
+            trailing: _defaultPrinterAddress != null
+                ? const Icon(Ionicons.star, color: Colors.amber)
+                : null,
           ),
           ListTile(
             title: const Text('Ukuran Kertas'),
@@ -222,30 +260,29 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
             ),
           ),
           const Divider(),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _devices.length,
-              itemBuilder: (context, index) {
-                final device = _devices[index];
-
-                // attempt to extract displayable name and address from dynamic device
-                final name = device?.name ?? device?.localName ?? device?.deviceName ?? 'Unknown Device';
-                final address = device?.address ?? device?.id ?? device?.deviceId ?? 'No Address';
-
-                final bool isDefault = address == _defaultPrinterAddress;
-
-                return ListTile(
-                  leading: Icon(isDefault ? Ionicons.print : Ionicons.print_outline),
-                  title: Text(name.toString()),
-                  subtitle: Text(address.toString()),
-                  trailing: isDefault ? const Icon(Ionicons.star, color: Colors.amber) : null,
-                  onTap: () => _onDeviceTap(device),
-                  selected: isDefault,
-                  selectedTileColor: Theme.of(context).primaryColor.withAlpha(25),
-                );
-              },
+          if (_connectionType == 'bluetooth')
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Text('Perangkat Bluetooth Ter-pairing',
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
-          ),
+          if (_connectionType == 'bluetooth')
+            ..._devices.map((device) {
+              final name = device.name ?? 'Unknown';
+              final address = device.address ?? 'No Address';
+              final isDefault = address == _defaultPrinterAddress;
+
+              return ListTile(
+                leading: Icon(
+                    isDefault ? Ionicons.print : Ionicons.print_outline),
+                title: Text(name),
+                subtitle: Text(address),
+                onTap: () => _setDefaultPrinter(device),
+                selected: isDefault,
+                selectedTileColor:
+                    Theme.of(context).primaryColor.withAlpha(25),
+              );
+            }),
         ],
       ),
     );

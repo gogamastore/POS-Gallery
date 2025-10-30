@@ -9,7 +9,8 @@ import '../../providers/pos_provider.dart';
 import '../../providers/customer_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/pos_service.dart';
-import '../orders/order_detail_screen.dart'; // Import OrderDetailScreen
+import '../orders/print_page_screen.dart'; // Import PrintPageScreen
+import '../../models/order.dart' as models;
 
 class ProcessPosScreen extends ConsumerStatefulWidget {
   const ProcessPosScreen({super.key});
@@ -59,7 +60,8 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
 
     if (cartItems.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Keranjang kosong.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Keranjang kosong.')));
       return;
     }
 
@@ -76,11 +78,13 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
       );
       ref.read(posCartProvider.notifier).clearCart();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pesanan disimpan sebagai Draf.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pesanan disimpan sebagai Draf.')));
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan draf: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal menyimpan draf: $e')));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -122,17 +126,31 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Transaksi berhasil! Mengalihkan ke detail pesanan...')),
+        const SnackBar(
+            content:
+                Text('Transaksi berhasil! Mengalihkan ke detail pesanan...')),
       );
 
-      // Navigasi ke OrderDetailScreen
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (context) => OrderDetailScreen(orderId: orderId),
-        ),
-        (route) => route.isFirst, // Hapus semua halaman sebelumnya sampai ke halaman utama
-      );
-
+      // Fetch created order from Firestore and navigate to PrintPageScreen
+      try {
+        final DocumentSnapshot<Map<String, dynamic>> doc =
+            await FirebaseFirestore.instance
+                .collection('orders')
+                .doc(orderId)
+                .get();
+        if (doc.exists) {
+          final orderModel = models.Order.fromFirestore(doc);
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+                builder: (context) => PrintPageScreen(order: orderModel)),
+            (route) => route.isFirst,
+          );
+        } else {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      } catch (e) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
