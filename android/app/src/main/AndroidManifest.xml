@@ -3,15 +3,29 @@
 
     <!-- Permissions needed for USB, network and Bluetooth printing -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!--
+    The next two permissions are required for Android 12+
+    https://developer.android.com/about/versions/12/features/bluetooth-permissions
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!--
+    The next two permissions are required for older Android versions
+    -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <!-- Android 12+ Bluetooth runtime permissions -->
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Needed only if your app makes the device discoverable to Bluetooth
+         devices. -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-    <!-- Location permission sometimes required for BLE scanning on older Android versions -->
+
+    <!--
+    The next permission is required for Android 10+
+    https://developer.android.com/about/versions/10/privacy/changes#location-telephony-bluetooth-wifi
+    -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- Allow optional USB host feature (not required on all devices) -->

@@ -1,104 +1,101 @@
 import 'dart:async';
+import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:thermal_printer/thermal_printer.dart' as tp;
 
 import '../models/order.dart';
 import 'printing_service.dart';
-import 'device_utils.dart';
 
+// Real implementation using blue_thermal_printer
 class _PrintingServiceImpl implements PrintingService {
+  final BlueThermalPrinter _bluetooth = BlueThermalPrinter.instance;
   final currencyFormatter =
       NumberFormat.currency(locale: 'id_ID', symbol: '', decimalDigits: 0);
 
-  final _scanResultsController = StreamController<List<dynamic>>.broadcast();
+  final _scanResultsController = StreamController<List<BluetoothDevice>>.broadcast();
+  final _connectionStatusController = StreamController<int?>.broadcast();
+
+  StreamSubscription? _stateSubscription;
+
+  _PrintingServiceImpl() {
+    _stateSubscription = _bluetooth.onStateChanged().listen((state) {
+      _connectionStatusController.add(state);
+    });
+  }
+
   @override
   Stream<List<dynamic>> get scanResults => _scanResultsController.stream;
 
-  final tp.PrinterManager _printerManager = tp.PrinterManager.instance;
-  StreamSubscription<dynamic>? _discoverySub;
-  final List<dynamic> _foundDevices = [];
-
-  _PrintingServiceImpl();
+  @override
+  Stream<int?> get connectionStatus => _connectionStatusController.stream;
 
   @override
-  Stream<int?> get connectionStatus =>
-      _printerManager.stateBluetooth.map((s) => s.index);
-
-  @override
-  Future<String> getBleAvailability() async {
-    return 'not_supported_by_thermal_printer_lib';
-  }
-
-  @override
-  Future<void> enableBle() async {
-    if (kDebugMode) {
-      print('enableBle is not supported in this implementation.');
-    }
-  }
-
-  @override
-  void startScan({bool isBle = false}) {
-    _discoverySub?.cancel();
-    _foundDevices.clear();
-    if (!_scanResultsController.isClosed) {
-      _scanResultsController.add([]);
-    }
-
+  Future<List<dynamic>> getBondedDevices() async {
     try {
-      _discoverySub = _printerManager
-          .discovery(type: tp.PrinterType.bluetooth, isBle: isBle)
-          .listen((device) {
-        final devKey = getDeviceAddress(device);
-        if (!_foundDevices.any((d) => getDeviceAddress(d) == devKey)) {
-          _foundDevices.add(device);
-          if (!_scanResultsController.isClosed) {
-            _scanResultsController.add(List<dynamic>.from(_foundDevices));
-          }
-        }
-      });
+      return await _bluetooth.getBondedDevices();
     } catch (e) {
       if (kDebugMode) {
-        print('startScan failed: $e');
-      }
-    }
-  }
-
-  @override
-  void stopScan() {
-    _discoverySub?.cancel();
-  }
-
-  @override
-  Future<void> connectToDevice(dynamic device, {bool isBle = false}) async {
-    final prefs = await SharedPreferences.getInstance();
-    final typeStr = prefs.getString('printer_connection_type') ?? 'bluetooth';
-    final type = typeStr == 'usb' ? tp.PrinterType.usb : tp.PrinterType.bluetooth;
-
-    try {
-      await _printerManager.connect(
-        type: type,
-        model: device,
-      );
-    } catch (e) {
-      if (kDebugMode) {
-        print('connectToDevice failed: $e');
+        print('getBondedDevices failed: $e');
       }
       rethrow;
     }
   }
 
   @override
+  Future<String> getBleAvailability() async {
+    // blue_thermal_printer handles standard Bluetooth, not BLE scanning specifically.
+    return 'not_applicable';
+  }
+
+  @override
+  Future<void> enableBle() async {
+     // Not needed for this library
+  }
+
+  @override
+  void startScan({bool isBle = false}) {
+    // blue_thermal_printer gets bonded devices, not a continuous scan.
+    _bluetooth.getBondedDevices().then((devices) {
+      if (!_scanResultsController.isClosed) {
+        _scanResultsController.add(devices);
+      }
+    }).catchError((e) {
+       if (kDebugMode) {
+        print('getBondedDevices failed: $e');
+      }
+      if (!_scanResultsController.isClosed) {
+        _scanResultsController.addError(e);
+      }
+    });
+  }
+
+  @override
+  void stopScan() {
+    // Not applicable as getBondedDevices is a one-time call.
+  }
+
+  @override
+  Future<void> connectToDevice(dynamic device, {bool isBle = false}) async {
+    if (device is BluetoothDevice) {
+      try {
+        await _bluetooth.connect(device);
+      } catch (e) {
+        if (kDebugMode) {
+          print('connectToDevice failed: $e');
+        }
+        rethrow;
+      }
+    }
+  }
+
+  @override
   Future<void> disconnect() async {
-    final prefs = await SharedPreferences.getInstance();
-    final typeStr = prefs.getString('printer_connection_type') ?? 'bluetooth';
-    final type = typeStr == 'usb' ? tp.PrinterType.usb : tp.PrinterType.bluetooth;
     try {
-      await _printerManager.disconnect(type: type);
+      await _bluetooth.disconnect();
     } catch (e) {
-      if (kDebugMode) {
+       if (kDebugMode) {
         print('disconnect failed: $e');
       }
     }
@@ -150,10 +147,9 @@ class _PrintingServiceImpl implements PrintingService {
       ]));
 
       if (hasDiscount) {
-        // ESC/POS typically doesn't support strike-through; display previous price as note
         bytes.addAll(generator.text(
-            '(Harga Sebelum Diskon: ${currencyFormatter.format(originalPrice)})',
-            styles: const PosStyles(align: PosAlign.left)));
+            '(Harga Sblm Diskon: ${currencyFormatter.format(originalPrice)})',
+            styles: const PosStyles(align: PosAlign.left, reverse: true)));
       }
     }
 
@@ -168,7 +164,7 @@ class _PrintingServiceImpl implements PrintingService {
     ]));
 
     bytes.addAll(generator.row([
-      PosColumn(text: 'Todal Discount', width: 6),
+      PosColumn(text: 'Total Diskon', width: 6),
       PosColumn(
           text: currencyFormatter.format(order.totalDiscount),
           width: 6,
@@ -196,12 +192,8 @@ class _PrintingServiceImpl implements PrintingService {
 
   @override
   Future<void> sendBytesToPrinter(List<int> bytes) async {
-    final prefs = await SharedPreferences.getInstance();
-    final typeStr = prefs.getString('printer_connection_type') ?? 'bluetooth';
-    final type = typeStr == 'usb' ? tp.PrinterType.usb : tp.PrinterType.bluetooth;
-
     try {
-      await _printerManager.send(type: type, bytes: bytes);
+      await _bluetooth.writeBytes(Uint8List.fromList(bytes));
     } catch (e) {
       if (kDebugMode) {
         print('sendBytesToPrinter failed: $e');
@@ -211,193 +203,60 @@ class _PrintingServiceImpl implements PrintingService {
   }
 
   @override
-  Future<List<dynamic>> scanUsbDevices(
-      {Duration timeout = const Duration(seconds: 5)}) async {
-    final List<dynamic> devices = <dynamic>[];
+  Future<void> printReceipt(Order order, {int paperSize = 80}) async {
+    final bytes = await buildReceiptBytes(order, paperSize: paperSize);
+    await sendBytesToPrinter(bytes);
+  }
+
+  @override
+  Future<void> connectToSavedDefault() async {
+    final prefs = await SharedPreferences.getInstance();
+    final address = prefs.getString('default_printer_address');
+    if (address == null) return;
+
     try {
-      final sub = _printerManager.discovery(type: tp.PrinterType.usb).listen((d) {
-        try {
-          final key = getDeviceAddress(d);
-          if (!devices.any((x) => getDeviceAddress(x) == key)) {
-            devices.add(d);
-          }
-        } catch (_) {
-          devices.add(d);
-        }
-      }, onError: (e) {
-        if (kDebugMode) print('discovery error: $e');
-      });
-
-      await Future.delayed(timeout);
-      await sub.cancel();
-
-      final List<dynamic> wrapped = <dynamic>[];
-      for (final d in devices) {
-        final online = await isUsbDeviceOnline(d);
-        wrapped.add({'device': d, 'online': online});
-      }
-      return wrapped;
+      final devices = await _bluetooth.getBondedDevices();
+      final match = devices.firstWhere((d) => d.address == address, orElse: () => throw Exception('Device not found'));
+      await connectToDevice(match);
     } catch (e) {
-      if (kDebugMode) print('scanUsbDevices failed: $e');
-      return devices.map((d) => {'device': d, 'online': false}).toList();
+      if (kDebugMode) {
+        print('connectToSavedDefault failed: $e');
+      }
     }
+  }
+
+  // --- USB Methods are NOT SUPPORTED by blue_thermal_printer ---
+  // --- They are kept for interface compatibility but do nothing. ---
+
+  @override
+  Future<List<dynamic>> scanUsbDevices(
+      {Duration timeout = const Duration(seconds: 2)}) async {
+    if (kDebugMode) {
+      print('scanUsbDevices is not supported in this implementation.');
+    }
+    return [];
   }
 
   @override
   Future<bool> isUsbDeviceOnline(dynamic device) async {
-    // Best-effort check: attempt to connect and disconnect quickly.
-    try {
-      await _printerManager.connect(type: tp.PrinterType.usb, model: device);
-      await _printerManager.disconnect(type: tp.PrinterType.usb);
-      return true;
-    } catch (_) {
-      return false;
+    if (kDebugMode) {
+      print('isUsbDeviceOnline is not supported in this implementation.');
     }
+    return false;
   }
 
   @override
   Future<bool> pairUsbDevice(dynamic device) async {
-    String? read(dynamic obj, List<String> keys) {
-      if (obj == null) return null;
-      try {
-        if (obj is Map) {
-          for (final k in keys) {
-            if (obj.containsKey(k) && obj[k] != null) return obj[k].toString();
-          }
-        } else {
-          final dyn = obj as dynamic;
-          for (final k in keys) {
-            try {
-              final val = dyn as dynamic;
-              switch (k) {
-                case 'name':
-                  if (val.name != null) return val.name.toString();
-                  break;
-                case 'productId':
-                  if (val.productId != null) return val.productId.toString();
-                  break;
-                case 'vendorId':
-                  if (val.vendorId != null) return val.vendorId.toString();
-                  break;
-                case 'address':
-                  if (val.address != null) return val.address.toString();
-                  break;
-              }
-            } catch (_) {}
-          }
-        }
-      } catch (_) {}
-      return null;
+    if (kDebugMode) {
+      print('pairUsbDevice is not supported in this implementation.');
     }
-
-    try {
-      if (kDebugMode) print('pairUsbDevice input: type=${device.runtimeType}, value=$device');
-
-      final name = read(device, ['name', 'productName', 'deviceName']) ?? '';
-      final pid = read(device, ['productId', 'productid', 'pid']);
-      final vid = read(device, ['vendorId', 'vendorid', 'vid']);
-
-      if (kDebugMode) print('pairUsbDevice resolved: name=$name pid=$pid vid=$vid');
-
-      // First try connecting using the original discovered device object.
-      try {
-        final connectedOriginal = await _printerManager.connect(type: tp.PrinterType.usb, model: device);
-        if (connectedOriginal) {
-          await _printerManager.disconnect(type: tp.PrinterType.usb);
-          return true;
-        }
-      } catch (e) {
-        if (kDebugMode) print('connect with original device failed: $e');
-      }
-
-      // If original connect did not work and we have pid/vid, try UsbPrinterInput model
-      if (pid != null || vid != null) {
-        final usbModel = tp.UsbPrinterInput(name: name, productId: pid, vendorId: vid);
-        try {
-          final connected = await _printerManager.connect(type: tp.PrinterType.usb, model: usbModel);
-          if (connected) {
-            await _printerManager.disconnect(type: tp.PrinterType.usb);
-            return true;
-          }
-        } catch (e) {
-          if (kDebugMode) print('connect with UsbPrinterInput failed: $e');
-        }
-      }
-
-      // As a last resort, try UsbPrinterInput with name/address (even if pid/vid missing)
-      final fallbackUsb = tp.UsbPrinterInput(
-        name: name,
-        productId: pid,
-        vendorId: vid,
-      );
-      try {
-        final connectedFallback = await _printerManager.connect(type: tp.PrinterType.usb, model: fallbackUsb);
-        if (connectedFallback) {
-          await _printerManager.disconnect(type: tp.PrinterType.usb);
-          return true;
-        }
-      } catch (e) {
-        if (kDebugMode) print('connect with fallback UsbPrinterInput failed: $e');
-      }
-
-      return false;
-    } catch (e) {
-      if (kDebugMode) {
-        print('pairUsbDevice failed: $e');
-      }
-      return false;
-    }
+    return false;
   }
 
-  @override
-  Future<void> printReceipt(Order order, {int paperSize = 80}) async {
-    final bytes = await buildReceiptBytes(order, paperSize: paperSize);
-    await sendBytesToPrinter(bytes.toList());
-  }
-
-  // These methods are no longer needed
-  Future<bool> discoverAndSaveWriteCharacteristic(dynamic device) async => false;
-
-  Future<bool> writeUsingSavedUuid(dynamic device, Uint8List bytes) async => false;
-
-  @override
-  Future<void> connectToSavedDefault() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final address = prefs.getString('default_printer_address');
-      final name = prefs.getString('default_printer_name');
-      if (address == null && name == null) return;
-
-      // Attempt to find device from discovered list
-      try {
-        final devices = await _printerManager.discovery(type: tp.PrinterType.usb).toList();
-        dynamic match;
-        for (final d in devices) {
-          final dName = getDeviceName(d);
-          final dAddr = getDeviceAddress(d);
-          if ((address != null && dAddr == address) || (name != null && dName == name)) {
-            match = d;
-            break;
-          }
-        }
-        if (match != null) {
-          await connectToDevice(match, isBle: false);
-          return;
-        }
-      } catch (e) {
-        if (kDebugMode) print('Error finding saved default in discovery: $e');
-      }
-
-      // If not found via discovery, try connecting via UsbPrinterInput built from saved values
-      try {
-        final usbModel = tp.UsbPrinterInput(name: name ?? '', productId: null, vendorId: null);
-        await _printerManager.connect(type: tp.PrinterType.usb, model: usbModel);
-      } catch (e) {
-        if (kDebugMode) print('connectToSavedDefault failed: $e');
-      }
-    } catch (e) {
-      if (kDebugMode) print('connectToSavedDefault: $e');
-    }
+  void dispose() {
+    _scanResultsController.close();
+    _connectionStatusController.close();
+    _stateSubscription?.cancel();
   }
 }
 

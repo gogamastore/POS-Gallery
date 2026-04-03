@@ -1,20 +1,37 @@
 import 'dart:typed_data';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:myapp/models/order.dart';
 
 class PdfInvoiceExporter {
+  // Cache for the downloaded font data to avoid re-downloading every time.
+  static Uint8List? _fontData;
+  static Uint8List? _boldFontData;
+
+  // Method to fetch font from a URL
+  Future<Uint8List> _fetchFont(String url) async {
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    }
+    throw Exception('Failed to load font from $url');
+  }
+
   Future<Uint8List> exportInvoice(Order order) async {
     final pdf = pw.Document();
 
-    final fontData =
-        await rootBundle.load("assets/fonts/IBMPlexMono-Regular.ttf");
-    final ttf = pw.Font.ttf(fontData);
-    final boldFontData =
-        await rootBundle.load("assets/fonts/IBMPlexMono-Bold.ttf");
-    final boldTtf = pw.Font.ttf(boldFontData);
+    // --- GUARANTEED FONT LOADING METHOD ---
+    // Download the font files directly from the official Google Fonts GitHub repo.
+    // This bypasses all local asset and helper issues.
+    _fontData ??= await _fetchFont(
+        'https://github.com/google/fonts/raw/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf');
+    _boldFontData ??= await _fetchFont(
+        'https://github.com/google/fonts/raw/main/ofl/ibmplexmono/IBMPlexMono-Bold.ttf');
+
+    final ttf = pw.Font.ttf(ByteData.view(_fontData!.buffer));
+    final boldTtf = pw.Font.ttf(ByteData.view(_boldFontData!.buffer));
 
     final textStyle = pw.TextStyle(font: ttf, fontSize: 9);
     final boldTextStyle = pw.TextStyle(font: boldTtf, fontSize: 9);

@@ -31,4 +31,7 @@ abstract class PrintingService {
   Future<bool> pairUsbDevice(dynamic device);
   Future<bool> isUsbDeviceOnline(dynamic device);
   Future<void> connectToSavedDefault();
+
+  // Add this method to get bonded/paired devices
+  Future<List<dynamic>> getBondedDevices();
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:typed_data';
 
+import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,7 +15,6 @@ import 'package:myapp/utils/pdf_invoice_exporter.dart';
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
-import 'package:thermal_printer/thermal_printer.dart' as tp;
 
 class PrintPageScreen extends ConsumerStatefulWidget {
   final Order order;
@@ -29,6 +29,7 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
   final PrintingService _printingService = getPrintingService();
 
   Future<void> _downloadReceipt(BuildContext context) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
     try {
       final exporter = PdfInvoiceExporter();
       final Uint8List pdfBytes = await exporter.exportInvoice(widget.order);
@@ -50,17 +51,45 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
             filename: 'struk-pembelian-${widget.order.id}.pdf');
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal mengunduh struk: $e')),
-        );
-      }
+      if (!mounted) return;
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Gagal mengunduh struk: $e')),
+      );
     }
   }
 
   Future<void> _handlePrint() async {
-    if (!mounted) return;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final address = prefs.getString('default_printer_address');
 
+      if (address == null) {
+        final selectedDevice = await showDialog<BluetoothDevice>(
+          context: context,
+          builder: (dialogContext) => _BluetoothDeviceDialog(),
+        );
+
+        if (selectedDevice != null) {
+          await _printWithDevice(selectedDevice);
+        }
+      } else {
+        await _printWithSavedDevice();
+      }
+    } catch (e, s) {
+      developer.log('Error preparing for print: $e', stackTrace: s);
+      if (!mounted) return;
+      navigator.pop();
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Gagal mempersiapkan print: $e')),
+      );
+    }
+  }
+
+  Future<void> _printWithSavedDevice() async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -72,7 +101,7 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
             children: [
               CircularProgressIndicator(),
               SizedBox(width: 20),
-              Text('Mempersiapkan struk...'),
+              Text('Mencetak ke printer tersimpan...'),
             ],
           ),
         ),
@@ -80,50 +109,28 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
     );
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final address = prefs.getString('default_printer_address');
-      final name = prefs.getString('default_printer_name');
-      final connType =
-          prefs.getString('printer_connection_type') ?? 'bluetooth';
-      final isBle = connType == 'bluetooth_le';
+      await _printingService.connectToSavedDefault();
+      await _printingService.printReceipt(widget.order);
+      await _printingService.disconnect();
 
-      dynamic device;
-      if (address != null && name != null) {
-        if (connType == 'usb') {
-          device =
-              tp.UsbPrinterInput(name: name, productId: null, vendorId: null);
-        } else {
-          device = tp.BluetoothPrinterInput(
-              name: name, address: address, isBle: isBle);
-        }
-      }
-
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-
-      if (device == null) {
-        final selectedDevice = await showDialog<dynamic>(
-          context: context,
-          builder: (dialogContext) => _BluetoothDeviceDialog(),
-        );
-
-        if (selectedDevice == null) return;
-        device = selectedDevice;
-      }
-
-      await _printWithDevice(device);
+      if (!mounted) return;
+      navigator.pop();
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(content: Text('Struk berhasil dikirim ke printer.')),
+      );
     } catch (e, s) {
-      developer.log('Error preparing for print: $e', stackTrace: s);
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal mempersiapkan print: $e')),
-        );
-      }
+      developer.log('Error printing with saved device: $e', stackTrace: s);
+      if (!mounted) return;
+      navigator.pop();
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Gagal mencetak ke printer tersimpan: $e')),
+      );
     }
   }
 
-  Future<void> _printWithDevice(dynamic device) async {
-    if (!mounted) return;
+  Future<void> _printWithDevice(BluetoothDevice device) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     showDialog(
       context: context,
@@ -148,20 +155,18 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
       await _printingService.printReceipt(widget.order);
       await _printingService.disconnect();
 
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Struk berhasil dikirim ke printer.')),
-        );
-      }
+      if (!mounted) return;
+      navigator.pop();
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(content: Text('Struk berhasil dikirim ke printer.')),
+      );
     } catch (e, s) {
       developer.log('Error printing: $e', stackTrace: s);
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saat mencetak: $e')),
-        );
-      }
+      if (!mounted) return;
+      navigator.pop();
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Error saat mencetak: $e')),
+      );
     }
   }
 
@@ -193,7 +198,7 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
                   color: Colors.white,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black12, // Updated for linter
                       blurRadius: 10,
                       offset: const Offset(0, 5),
                     ),
@@ -203,112 +208,115 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                     // --- Header ---
-                      Center(
-                          child: Text('GALLERY MAKASSAR',
-                              style: boldTextStyle.copyWith(fontSize: 18))),
-                      const Center(
-                          child: Text('Jl. Borong Raya No. 100',
-                              style: textStyle)),
-                      const Center(
-                          child:
-                              Text('Telp: 0895635299075', style: textStyle)),
-                      const Divider(color: Colors.black),
+                    // --- Header ---
+                    Center(
+                        child: Text('GALLERY MAKASSAR',
+                            style: boldTextStyle.copyWith(fontSize: 18))),
+                    const Center(
+                        child:
+                            Text('Jl. Borong Raya No. 100', style: textStyle)),
+                    const Center(
+                        child: Text('Telp: 0895635299075', style: textStyle)),
+                    const Divider(color: Colors.black),
 
-                      // --- Order Info ---
-                      Text('No: ${widget.order.id?.substring(0, 8) ?? 'N/A'}',
+                    // --- Order Info ---
+                    Text('No: ${widget.order.id?.substring(0, 8) ?? 'N/A'}',
+                        style: textStyle),
+                    Text(
+                        'Tanggal: ${DateFormat('dd/MM/yy HH:mm').format((widget.order.createdAt ?? widget.order.date).toDate())}',
+                        style: textStyle),
+                    Text('Kasir: ${widget.order.kasir}', style: textStyle),
+                    if (widget.order.customer != null &&
+                        widget.order.customer!.isNotEmpty)
+                      Text('Customer: ${widget.order.customer!}',
                           style: textStyle),
-                      Text(
-                          'Tanggal: ${DateFormat('dd/MM/yy HH:mm').format((widget.order.createdAt ?? widget.order.date).toDate())}',
-                          style: textStyle),
-                      Text('Kasir: ${widget.order.kasir}', style: textStyle),
-                      if (widget.order.customer != null &&
-                          widget.order.customer!.isNotEmpty)
-                        Text('Customer: ${widget.order.customer!}',
-                            style: textStyle),
-                      const Divider(color: Colors.black),
+                    const Divider(color: Colors.black),
 
-                      // --- Product Items ---
-                      for (var item in widget.order.products) ...[
-                        Text(item['name'] as String, style: textStyle),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                                '  ${item['quantity']} x ${currencyFormatter.format(item['price'])}',
-                                style: textStyle),
-                            Text(
-                                currencyFormatter
-                                    .format(item['quantity'] * item['price']),
-                                style: textStyle),
-                          ],
-                        ),
-                        // show original price (before discount) if available
-                        (() {
-                          final orig = item['originalPrice'];
-                          double? originalPrice;
-                          try {
-                            if (orig != null) originalPrice = (orig as num).toDouble();
-                          } catch (_) {
-                            originalPrice = null;
-                          }
-
-                          final price = (item['price'] as num).toDouble();
-                          final hasDiscount = originalPrice != null && originalPrice > price;
-                          if (hasDiscount) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 2.0),
-                              child: Text(
-                                '(Harga Sebelum Diskon: ${currencyFormatter.format(originalPrice)})',
-                                style: const TextStyle(fontSize: 10, decoration: TextDecoration.lineThrough),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        })(),
-                        const SizedBox(height: 4),
-                      ],
-                      const Divider(color: Colors.black),
-
-                      // --- Totals ---
+                    // --- Product Items ---
+                    for (var item in widget.order.products) ...[
+                      Text(item['name'] as String, style: textStyle),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Subtotal', style: textStyle),
-                          Text(currencyFormatter.format(widget.order.subtotal),
+                          Text(
+                              '  ${item['quantity']} x ${currencyFormatter.format(item['price'])}',
                               style: textStyle),
-                        ],
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Total Discount', style: textStyle),
                           Text(
                               currencyFormatter
-                                  .format(widget.order.totalDiscount),
+                                  .format(item['quantity'] * item['price']),
                               style: textStyle),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Total', style: boldTextStyle),
-                          Text(currencyFormatter.format(widget.order.total),
-                              style: boldTextStyle),
-                        ],
-                      ),
-                      const Divider(color: Colors.black),
+                      // show original price (before discount) if available
+                      (() {
+                        final orig = item['originalPrice'];
+                        double? originalPrice;
+                        try {
+                          if (orig != null)
+                            originalPrice = (orig as num).toDouble();
+                        } catch (_) {
+                          originalPrice = null;
+                        }
 
-                      // --- Footer ---
-                      const Center(
-                          child: Text('Terima Kasih!', style: textStyle)),
+                        final price = (item['price'] as num).toDouble();
+                        final hasDiscount =
+                            originalPrice != null && originalPrice > price;
+                        if (hasDiscount) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 2.0),
+                            child: Text(
+                              '(Harga Sebelum Diskon: ${currencyFormatter.format(originalPrice)})',
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  decoration: TextDecoration.lineThrough),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      })(),
                       const SizedBox(height: 4),
-                      const Center(
-                          child: Text(
-                              'Barang yang sudah dibeli tidak dapat dikembalikan.',
-                              style: textStyle,
-                              textAlign: TextAlign.center)),
+                    ],
+                    const Divider(color: Colors.black),
+
+                    // --- Totals ---
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Subtotal', style: textStyle),
+                        Text(currencyFormatter.format(widget.order.subtotal),
+                            style: textStyle),
+                      ],
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Total Discount', style: textStyle),
+                        Text(
+                            currencyFormatter
+                                .format(widget.order.totalDiscount),
+                            style: textStyle),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Total', style: boldTextStyle),
+                        Text(currencyFormatter.format(widget.order.total),
+                            style: boldTextStyle),
+                      ],
+                    ),
+                    const Divider(color: Colors.black),
+
+                    // --- Footer ---
+                    const Center(
+                        child: Text('Terima Kasih!', style: textStyle)),
+                    const SizedBox(height: 4),
+                    const Center(
+                        child: Text(
+                            'Barang yang sudah dibeli tidak dapat dikembalikan.',
+                            style: textStyle,
+                            textAlign: TextAlign.center)),
                   ],
                 ),
               ),
@@ -344,18 +352,20 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
               ),
               const SizedBox(height: 20),
               ElevatedButton(
-                child: const Text('Selesai'),
                 onPressed: () {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const MainTabController(initialIndex: 1)),
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            const MainTabController(initialIndex: 1)),
                     (Route<dynamic> route) => false,
                   );
                 },
                 style: ElevatedButton.styleFrom(
                     minimumSize: const Size(200, 48),
                     textStyle: const TextStyle(fontSize: 18)),
+                child: const Text('Selesai'), // Moved to be the last argument
               ),
-               const SizedBox(height: 20),
+              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -364,6 +374,7 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
   }
 }
 
+// --- REFACTORED BLUETOOTH DIALOG ---
 class _BluetoothDeviceDialog extends StatefulWidget {
   @override
   State<_BluetoothDeviceDialog> createState() => _BluetoothDeviceDialogState();
@@ -371,36 +382,19 @@ class _BluetoothDeviceDialog extends StatefulWidget {
 
 class _BluetoothDeviceDialogState extends State<_BluetoothDeviceDialog> {
   final PrintingService _printingService = getPrintingService();
-  StreamSubscription<List<dynamic>>? _scanSubscription;
-  List<dynamic> _devices = [];
-  bool _isScanning = false;
+  // Use a Future to hold the result of getting bonded devices.
+  late Future<List<dynamic>> _devicesFuture;
 
   @override
   void initState() {
     super.initState();
-    _startScan();
+    _loadDevices();
   }
 
-  @override
-  void dispose() {
-    _scanSubscription?.cancel();
-    _printingService.stopScan();
-    super.dispose();
-  }
-
-  void _startScan() {
-    if (!mounted) return;
+  // Fetches the bonded devices and assigns the future.
+  void _loadDevices() {
     setState(() {
-      _isScanning = true;
-      _devices = [];
-    });
-    _printingService.startScan();
-    _scanSubscription = _printingService.scanResults.listen((devices) {
-      if (!mounted) return;
-      setState(() {
-        _devices = devices;
-        _isScanning = false;
-      });
+      _devicesFuture = _printingService.getBondedDevices();
     });
   }
 
@@ -411,52 +405,85 @@ class _BluetoothDeviceDialogState extends State<_BluetoothDeviceDialog> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           const Text('Pilih Printer Bluetooth'),
-          if (_isScanning)
-            const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2))
-          else
-            IconButton(
-                icon: const Icon(Ionicons.refresh),
-                onPressed: _startScan,
-                tooltip: 'Scan Ulang')
+          IconButton(
+              icon: const Icon(Ionicons.refresh),
+              onPressed: _loadDevices, // Reload the list of devices
+              tooltip: 'Scan Ulang'),
         ],
       ),
       content: SizedBox(
         width: double.maxFinite,
-        child: _devices.isEmpty
-            ? Center(
+        // Use a FutureBuilder to handle loading, error, and data states.
+        child: FutureBuilder<List<dynamic>>(
+          future: _devicesFuture,
+          builder: (context, snapshot) {
+            // 1. Loading state
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Mencari printer...'),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            // 2. Error state
+            if (snapshot.hasError) {
+              return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Text(
-                    _isScanning
-                        ? 'Mencari printer...'
-                        : 'Tidak ada printer ter-pairing. Pastikan Bluetooth menyala.',
+                    'Gagal memuat printer:\n${snapshot.error}',
                     textAlign: TextAlign.center,
                   ),
                 ),
-              )
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: _devices.length,
-                itemBuilder: (context, index) {
-                  final device = _devices[index];
-                  final name = device.name ?? 'Unknown Device';
-                  final address = device.address ?? 'No Address';
-                  return ListTile(
-                    leading: const Icon(Ionicons.print_outline),
-                    title: Text(name),
-                    subtitle: Text(address),
-                    onTap: () => Navigator.of(context).pop(device),
-                  );
-                },
-              ),
+              );
+            }
+
+            // 3. Empty or no data state
+            final devices = snapshot.data ?? [];
+            if (devices.isEmpty) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text(
+                    'Tidak ada printer ter-pairing. Pastikan Bluetooth menyala dan printer sudah di-pairing di pengaturan HP Anda.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+
+            // 4. Data loaded successfully state
+            return ListView.builder(
+              shrinkWrap: true,
+              itemCount: devices.length,
+              itemBuilder: (context, index) {
+                final device = devices[index] as BluetoothDevice;
+                final name = device.name ?? 'Unknown Device';
+                final address = device.address ?? 'No Address';
+                return ListTile(
+                  leading: const Icon(Ionicons.print_outline),
+                  title: Text(name),
+                  subtitle: Text(address),
+                  onTap: () => Navigator.of(context).pop(device),
+                );
+              },
+            );
+          },
+        ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Batal'),
+          onPressed: () => Navigator.of(context).pop(),
         ),
       ],
     );
