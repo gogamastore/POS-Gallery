@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:ionicons/ionicons.dart';
+import 'package:myapp/screens/reports/stock_history_dialog.dart';
 
 import '../../models/product.dart';
 import '../../models/promotion_model.dart';
@@ -35,11 +37,20 @@ class ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     );
   }
 
+  // This existing function remains unchanged
   void _showPurchaseHistory() {
     showDialog(
       context: context,
       builder: (context) =>
           PurchaseHistoryDialog(productId: _currentProduct.id),
+    );
+  }
+
+  // This is the new function to show the stock movement history
+  void _showStockMovementHistory() {
+    showDialog(
+      context: context,
+      builder: (context) => StockHistoryDialog(productId: _currentProduct.id),
     );
   }
 
@@ -125,14 +136,21 @@ class ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       appBar: AppBar(
         title: Text(_currentProduct.name),
         actions: [
+          // New button for stock movement history
+          IconButton(
+            icon: const Icon(Ionicons.stats_chart_outline),
+            tooltip: 'Riwayat Pergerakan Stok',
+            onPressed: _showStockMovementHistory,
+          ),
           IconButton(
             icon: const Icon(Icons.edit),
             tooltip: 'Edit Produk',
             onPressed: _navigateToEditScreen,
           ),
+          // This is the existing button for purchase history, it remains unchanged
           IconButton(
             icon: const Icon(Icons.history),
-            tooltip: 'Lihat Log Stok',
+            tooltip: 'Riwayat Pembelian', // Tooltip clarified
             onPressed: _showPurchaseHistory,
           ),
           IconButton(

@@ -15,7 +15,6 @@ class PosCartScreen extends ConsumerStatefulWidget {
 }
 
 class PosCartScreenState extends ConsumerState<PosCartScreen> {
-
   void _showEditCartItemDialog(PosCartItem item) {
     showDialog(
       context: context,
@@ -27,7 +26,8 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
   Widget build(BuildContext context) {
     final cartItems = ref.watch(posCartProvider);
     final totalAmount = ref.watch(posTotalProvider);
-    final currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final currencyFormatter =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
     return Scaffold(
       appBar: AppBar(
@@ -41,11 +41,14 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.shopping_cart_outlined, size: 80, color: Colors.grey),
+                  Icon(Icons.shopping_cart_outlined,
+                      size: 80, color: Colors.grey),
                   SizedBox(height: 16),
-                  Text('Keranjang Anda masih kosong.', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                  Text('Keranjang Anda masih kosong.',
+                      style: TextStyle(fontSize: 18, color: Colors.grey)),
                   SizedBox(height: 8),
-                  Text('Tambahkan produk dari halaman penjualan.', style: TextStyle(color: Colors.grey)),
+                  Text('Tambahkan produk dari halaman penjualan.',
+                      style: TextStyle(color: Colors.grey)),
                 ],
               ),
             )
@@ -54,16 +57,19 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
               itemCount: cartItems.length,
               itemBuilder: (context, index) {
                 final item = cartItems[index];
-                return _buildCartItemCard(context, ref, item, currencyFormatter);
+                return _buildCartItemCard(
+                    context, ref, item, currencyFormatter);
               },
             ),
       bottomNavigationBar: cartItems.isEmpty
           ? null
-          : _buildSummaryBottomBar(context, currencyFormatter.format(totalAmount)),
+          : _buildSummaryBottomBar(
+              context, currencyFormatter.format(totalAmount)),
     );
   }
 
-  Widget _buildCartItemCard(BuildContext context, WidgetRef ref, PosCartItem item, NumberFormat currencyFormatter) {
+  Widget _buildCartItemCard(BuildContext context, WidgetRef ref,
+      PosCartItem item, NumberFormat currencyFormatter) {
     return InkWell(
       onTap: () => _showEditCartItemDialog(item),
       borderRadius: BorderRadius.circular(12),
@@ -78,19 +84,22 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(8.0),
-                child: (item.product.image != null && item.product.image!.isNotEmpty)
+                child: (item.product.image != null &&
+                        item.product.image!.isNotEmpty)
                     ? Image.network(
                         item.product.image!,
                         width: 60,
                         height: 60,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 60),
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.broken_image, size: 60),
                       )
                     : Container(
                         width: 60,
                         height: 60,
                         color: const Color(0xFFE0E6ED),
-                        child: const Icon(Icons.image_not_supported, color: Color(0xFFBDC3C7)),
+                        child: const Icon(Icons.image_not_supported,
+                            color: Color(0xFFBDC3C7)),
                       ),
               ),
               const SizedBox(width: 12),
@@ -98,16 +107,26 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.product.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
-                    if (item.product.sku != null && item.product.sku!.isNotEmpty)
+                    Text(item.product.name,
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                    if (item.product.sku != null &&
+                        item.product.sku!.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2.0),
-                        child: Text('SKU: ${item.product.sku}', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                        child: Text('SKU: ${item.product.sku}',
+                            style: const TextStyle(
+                                fontSize: 13, color: Colors.grey)),
                       ),
                     const SizedBox(height: 8),
                     Text(
                       '${item.quantity} x ${currencyFormatter.format(item.PosPrice)}',
-                      style: const TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),
@@ -118,18 +137,27 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    icon: const Icon(Icons.delete_outline,
+                        color: Colors.redAccent),
                     onPressed: () {
-                      ref.read(posCartProvider.notifier).removeItem(item.product.id);
+                      ref
+                          .read(posCartProvider.notifier)
+                          .removeItem(item.product.id);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('${item.product.name} dihapus dari keranjang.'), duration: const Duration(seconds: 2)),
+                        SnackBar(
+                            content: Text(
+                                '${item.product.name} dihapus dari keranjang.'),
+                            duration: const Duration(seconds: 2)),
                       );
                     },
                   ),
                   const SizedBox(height: 8),
                   Text(
                     currencyFormatter.format(item.subtotal),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green),
                   ),
                 ],
               ),
@@ -145,8 +173,14 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 10, offset: const Offset(0, -5))],
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withAlpha(25),
+              blurRadius: 10,
+              offset: const Offset(0, -5))
+        ],
+        borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16), topRight: Radius.circular(16)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -155,20 +189,28 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Total Penjualan', style: TextStyle(color: Colors.grey)),
-              Text(formattedTotal, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green)),
+              const Text('Total Penjualan',
+                  style: TextStyle(color: Colors.grey)),
+              Text(formattedTotal,
+                  style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green)),
             ],
           ),
           ElevatedButton.icon(
             onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(builder: (context) => const ProcessPosScreen()));
+              Navigator.of(context).push(MaterialPageRoute(
+                  builder: (context) => const ProcessPosScreen()));
             },
             icon: const Icon(Icons.shopping_cart_checkout),
-            label: const Text('Lanjutkan'),
+            label: const Text('Lanjutkan Ke Ringkasan'),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              textStyle:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30)),
               backgroundColor: Colors.green,
               foregroundColor: Colors.white,
             ),
