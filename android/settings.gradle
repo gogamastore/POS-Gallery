@@ -1,0 +1,19 @@
+
+def flutterProjectRoot = rootProject.projectDir.parentFile.toPath()
+
+def properties = new Properties()
+def localPropertiesFile = new File(rootProject.projectDir, 'local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        properties.load(reader)
+    }
+}
+
+def flutterSdkPath = properties.getProperty('flutter.sdk')
+if (flutterSdkPath == null) {
+    throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
+}
+
+apply from: "$flutterSdkPath/packages/flutter_tools/gradle/flutter.groovy"
+
+include ':app'

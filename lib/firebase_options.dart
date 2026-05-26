@@ -22,8 +22,6 @@ class DefaultFirebaseOptions {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
-      case TargetPlatform.windows:
-        return windows;
       case TargetPlatform.iOS:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for ios - '
@@ -34,6 +32,8 @@ class DefaultFirebaseOptions {
           'DefaultFirebaseOptions have not been configured for macos - '
           'you can reconfigure this by running the FlutterFire CLI again.',
         );
+      case TargetPlatform.windows:
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -47,30 +47,30 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyAd5OIAngqc2sOkAEcMM-KKrJ2cx5UFlVc',
-    appId: '1:19804179052:web:3e4f61d1f38541c1de2649',
-    messagingSenderId: '19804179052',
-    projectId: 'gallery-makassar',
-    authDomain: 'gallery-makassar.firebaseapp.com',
-    storageBucket: 'gallery-makassar.firebasestorage.app',
-    measurementId: 'G-1KNRT9E1S2',
+    apiKey: 'AIzaSyDIl-RgVHblRZx-MZHlhRWEOK90iw6eEyI',
+    appId: '1:889047904404:web:e681227fb498239fa5c481',
+    messagingSenderId: '889047904404',
+    projectId: 'gallerypos',
+    authDomain: 'gallerypos.firebaseapp.com',
+    storageBucket: 'gallerypos.firebasestorage.app',
+    measurementId: 'G-SYMNEX7VYL',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCpWqu52Z0gW8woAjkpX3uGcVAjuTwqvb0',
-    appId: '1:19804179052:android:3baaaef42552d8d8de2649',
-    messagingSenderId: '19804179052',
-    projectId: 'gallery-makassar',
-    storageBucket: 'gallery-makassar.firebasestorage.app',
+    apiKey: 'AIzaSyDQm-CFYl5PZ9qWGVnVb5BF66cNjYl-8Qg',
+    appId: '1:889047904404:android:da1f41261314fd26a5c481',
+    messagingSenderId: '889047904404',
+    projectId: 'gallerypos',
+    storageBucket: 'gallerypos.firebasestorage.app',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyAd5OIAngqc2sOkAEcMM-KKrJ2cx5UFlVc',
-    appId: '1:19804179052:web:98bd0f1d06606890de2649',
-    messagingSenderId: '19804179052',
-    projectId: 'gallery-makassar',
-    authDomain: 'gallery-makassar.firebaseapp.com',
-    storageBucket: 'gallery-makassar.firebasestorage.app',
-    measurementId: 'G-26V1BL2VYL',
+    apiKey: 'AIzaSyDIl-RgVHblRZx-MZHlhRWEOK90iw6eEyI',
+    appId: '1:889047904404:web:15008b6e4ff1cfbfa5c481',
+    messagingSenderId: '889047904404',
+    projectId: 'gallerypos',
+    authDomain: 'gallerypos.firebaseapp.com',
+    storageBucket: 'gallerypos.firebasestorage.app',
+    measurementId: 'G-ZY557LYH1W',
   );
 }
