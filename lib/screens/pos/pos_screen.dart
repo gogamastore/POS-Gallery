@@ -1,15 +1,19 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
 
+import '../../models/cash_drawer_shift.dart';
 import '../../models/pos_cart_item.dart';
 import '../../models/product.dart';
 import '../../models/promotion_model.dart';
+import '../../models/user_model.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/promo_provider.dart';
+import '../../providers/shift_provider.dart';
 import '../../services/sound_service.dart';
 import '../products/barcode_scanner_screen.dart';
 import 'add_temporary_product_dialog.dart';
@@ -37,6 +41,10 @@ class PosScreenState extends ConsumerState<PosScreen> {
         setState(() {});
       }
     });
+    // Dihapus: fetchActiveShift sudah dipanggil di konstruktor ShiftNotifier
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   ref.read(shiftProvider.notifier).fetchActiveShift();
+    // });
   }
 
   @override
@@ -45,6 +53,106 @@ class PosScreenState extends ConsumerState<PosScreen> {
     _soundService.dispose();
     super.dispose();
   }
+
+  void _showStartShiftDialog() {
+    final shiftNotifier = ref.read(shiftProvider.notifier);
+    final formKey = GlobalKey<FormState>();
+    UserModel? selectedCashier;
+    final startingCashController = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        // Gunakan Consumer untuk akses ref di dalam dialog
+        return Consumer(builder: (context, ref, child) {
+          return AlertDialog(
+            title: const Text('Mulai Shift Baru'),
+            content: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Gunakan cashiersProvider yang baru
+                  ref.watch(cashiersProvider).when(
+                        data: (cashiers) {
+                          if (cashiers.isEmpty) {
+                             return const Text('Tidak ada user Admin yang ditemukan.');
+                          }
+                          return DropdownButtonFormField<UserModel>(
+                            decoration: const InputDecoration(
+                                labelText: 'Pilih Kasir Aktif'),
+                            items: cashiers.map((user) {
+                              return DropdownMenuItem<UserModel>(
+                                value: user,
+                                child: Text(user.name),
+                              );
+                            }).toList(),
+                            onChanged: (value) => selectedCashier = value,
+                            validator: (value) =>
+                                value == null ? 'Kasir harus dipilih' : null,
+                          );
+                        },
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (error, stack) =>
+                            Center(child: Text('Error: $error')),
+                      ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: startingCashController,
+                    decoration: const InputDecoration(
+                        labelText: 'Modal Awal / Cash Drawer Awal'),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Modal awal harus diisi';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                child: const Text('Batal'),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+              ElevatedButton(
+                child: const Text('Mulai'),
+                onPressed: () async {
+                  if (formKey.currentState!.validate() && selectedCashier != null) {
+                    final startingCash =
+                        double.tryParse(startingCashController.text) ?? 0.0;
+                    final success = await shiftNotifier.startShift(
+                      selectedCashier!.uid,
+                      selectedCashier!.name,
+                      startingCash,
+                    );
+                    if (success && mounted) {
+                      Navigator.of(dialogContext).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Shift berhasil dimulai.')),
+                      );
+                    }
+                  } else {
+                     ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Silakan pilih kasir terlebih dahulu.')),
+                    );
+                  }
+                },
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  // ... (Sisa kode dari PosScreenState tetap sama)
 
   Future<void> _navigateToScanner() async {
     final sku = await Navigator.of(context).push<String>(
@@ -61,27 +169,190 @@ class PosScreenState extends ConsumerState<PosScreen> {
   void _showAddToCartDialog(Product product, Promotion? activePromo) {
     showDialog(
       context: context,
-      builder: (context) => AddToPosCartDialog(product: product, activePromo: activePromo),
+      builder: (context) => ProviderScope(
+        parent: ProviderScope.containerOf(context),
+        child: AddToPosCartDialog(product: product, activePromo: activePromo),
+      ),
     );
   }
 
   void _showAddTemporaryProductDialog() {
     showDialog(
       context: context,
-      builder: (context) => const AddTemporaryProductDialog(),
+      builder: (context) => ProviderScope(
+        parent: ProviderScope.containerOf(context),
+        child: const AddTemporaryProductDialog(),
+      ),
     );
   }
 
   void _showEditCartItemDialog(PosCartItem item) {
     showDialog(
       context: context,
-      builder: (context) => EditPosCartItemDialog(cartItem: item),
+      builder: (context) => ProviderScope(
+        parent: ProviderScope.containerOf(context),
+        child: EditPosCartItemDialog(cartItem: item),
+      ),
+    );
+  }
+
+  void _showEndShiftDialog(ShiftState shiftState) {
+    final shiftNotifier = ref.read(shiftProvider.notifier);
+    final shift = shiftState.activeShift!;
+    final formKey = GlobalKey<FormState>();
+    final countedCashController = TextEditingController();
+    final qrisTransferController = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Akhiri Shift'),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Nama Kasir: ${shift.cashierName}'),
+                    const SizedBox(height: 8),
+                    Text(
+                        'Modal Awal: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ').format(shift.startingCash)}'),
+                    const Divider(height: 24),
+                    _buildFutureCalculation(shiftNotifier, shift),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: countedCashController,
+                      decoration: const InputDecoration(
+                          labelText: 'Uang Tunai'),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (value) => setDialogState(() {}),
+                      validator: (value) =>
+                          value == null || value.isEmpty ? 'Wajib diisi' : null,
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: qrisTransferController,
+                      decoration:
+                          const InputDecoration(labelText: 'QRIS / Transfer'),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (value) => setDialogState(() {}),
+                      validator: (value) =>
+                          value == null || value.isEmpty ? 'Wajib diisi' : null,
+                    ),
+                    const Divider(height: 24),
+                    _buildDeclaredIncome(
+                        countedCashController, qrisTransferController),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                child: const Text('Batal'),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+              ElevatedButton(
+                child: const Text('Simpan'),
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    final countedCash =
+                        double.tryParse(countedCashController.text) ?? 0;
+                    final qrisTransfer =
+                        double.tryParse(qrisTransferController.text) ?? 0;
+                    final success =
+                        await shiftNotifier.endShift(countedCash, qrisTransfer);
+                    if (success && mounted) {
+                      Navigator.of(dialogContext).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Shift berhasil diakhiri.')),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  Widget _buildDeclaredIncome(
+      TextEditingController cash, TextEditingController qris) {
+    final double countedCash = double.tryParse(cash.text) ?? 0;
+    final double qrisTransfer = double.tryParse(qris.text) ?? 0;
+    final total = countedCash + qrisTransfer;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Pendapatan Kasir:',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        Text(
+          NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ').format(total),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFutureCalculation(
+      ShiftNotifier shiftNotifier, CashDrawerShift shift) {
+    return FutureBuilder<Map<String, double>>(
+      future: shiftNotifier.calculateShiftSummary(shift),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Text('Error: ${snapshot.error}');
+        }
+
+        final data = snapshot.data ?? {};
+        final totalSales = data['totalSales'] ?? 0;
+        final totalExpenses = data['totalExpenses'] ?? 0;
+        final endingCash = data['endingCash'] ?? 0;
+
+        final currencyFormat =
+            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ');
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Total Penjualan:'),
+              Text(currencyFormat.format(totalSales))
+            ]),
+            const SizedBox(height: 8),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Total Pengeluaran:'),
+              Text(currencyFormat.format(totalExpenses))
+            ]),
+            const SizedBox(height: 8),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Modal Akhir:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(currencyFormat.format(endingCash),
+                  style: const TextStyle(fontWeight: FontWeight.bold))
+            ]),
+          ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final cartItemCount = ref.watch(posCartProvider).length;
+    final shiftState = ref.watch(shiftProvider);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
@@ -89,14 +360,45 @@ class PosScreenState extends ConsumerState<PosScreen> {
         backgroundColor: Colors.white,
         elevation: 1,
         actions: [
+          if (shiftState.isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Center(
+                  child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))),
+            )
+          else
+            TextButton.icon(
+              icon: Icon(shiftState.isShiftActive
+                  ? Icons.stop_circle_outlined
+                  : Icons.play_circle_outline),
+              label: Text(
+                  shiftState.isShiftActive ? 'Akhiri Shift' : 'Mulai Shift'),
+              onPressed: () {
+                if (shiftState.isShiftActive) {
+                  _showEndShiftDialog(shiftState);
+                } else {
+                  _showStartShiftDialog();
+                }
+              },
+              style: TextButton.styleFrom(
+                foregroundColor:
+                    shiftState.isShiftActive ? Colors.redAccent : Colors.green,
+              ),
+            ),
           IconButton(
             icon: const Icon(Ionicons.add_circle_outline),
             onPressed: _showAddTemporaryProductDialog,
             tooltip: 'Tambah Produk Non-Katalog',
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      bottomNavigationBar: cartItemCount > 0 ? _buildCartBottomBar(context, cartItemCount) : null,
+      bottomNavigationBar: cartItemCount > 0
+          ? _buildCartBottomBar(context, cartItemCount)
+          : null,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -149,16 +451,24 @@ class PosScreenState extends ConsumerState<PosScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Keranjang Penjualan', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50))),
+                const Text('Keranjang Penjualan',
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2C3E50))),
                 IconButton(
-                  icon: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent),
-                  onPressed: cartItems.isNotEmpty ? () => ref.read(posCartProvider.notifier).clearCart() : null,
+                  icon: const Icon(Icons.delete_sweep_outlined,
+                      color: Colors.redAccent),
+                  onPressed: cartItems.isNotEmpty
+                      ? () => ref.read(posCartProvider.notifier).clearCart()
+                      : null,
                   tooltip: 'Kosongkan Keranjang',
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            const Text('Daftar produk yang akan dijual.', style: TextStyle(fontSize: 14, color: Color(0xFF7F8C8D))),
+            const Text('Daftar produk yang akan dijual.',
+                style: TextStyle(fontSize: 14, color: Color(0xFF7F8C8D))),
             const Divider(height: 32),
             Expanded(
               child: cartItems.isEmpty
@@ -166,9 +476,11 @@ class PosScreenState extends ConsumerState<PosScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.shopping_cart_outlined, size: 60, color: Color(0xFFBDC3C7)),
+                          Icon(Icons.shopping_cart_outlined,
+                              size: 60, color: Color(0xFFBDC3C7)),
                           SizedBox(height: 16),
-                          Text('Keranjang masih kosong', style: TextStyle(color: Color(0xFF7F8C8D)))
+                          Text('Keranjang masih kosong',
+                              style: TextStyle(color: Color(0xFF7F8C8D)))
                         ],
                       ),
                     )
@@ -184,15 +496,22 @@ class PosScreenState extends ConsumerState<PosScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                Text(currencyFormatter.format(total), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green))
+                const Text('Total',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(currencyFormatter.format(total),
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green))
               ],
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: cartItems.isNotEmpty
                   ? () {
-                      Navigator.of(context).push(MaterialPageRoute(builder: (context) => const PosCartScreen()));
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (context) => const PosCartScreen()));
                     }
                   : null,
               icon: const Icon(Icons.arrow_forward),
@@ -201,7 +520,8 @@ class PosScreenState extends ConsumerState<PosScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 backgroundColor: const Color(0xFF27AE60),
                 foregroundColor: Colors.white,
-                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                textStyle:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 disabledBackgroundColor: Colors.grey,
               ),
             )
@@ -214,16 +534,23 @@ class PosScreenState extends ConsumerState<PosScreen> {
   Widget _buildCartItemTile(PosCartItem item, NumberFormat currencyFormatter) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.w500)),
-      subtitle: Text('${item.quantity} x ${currencyFormatter.format(item.PosPrice)}'),
+      title: Text(item.product.name,
+          style: const TextStyle(fontWeight: FontWeight.w500)),
+      subtitle:
+          Text('${item.quantity} x ${currencyFormatter.format(item.PosPrice)}'),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(currencyFormatter.format(item.subtotal), style: const TextStyle(fontWeight: FontWeight.bold)),
-          IconButton(icon: const Icon(Icons.edit, size: 18, color: Colors.blueAccent), onPressed: () => _showEditCartItemDialog(item)),
+          Text(currencyFormatter.format(item.subtotal),
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+          IconButton(
+              icon: const Icon(Icons.edit, size: 18, color: Colors.blueAccent),
+              onPressed: () => _showEditCartItemDialog(item)),
           IconButton(
               icon: const Icon(Icons.delete, size: 18, color: Colors.redAccent),
-              onPressed: () => ref.read(posCartProvider.notifier).removeItem(item.product.id)),
+              onPressed: () => ref
+                  .read(posCartProvider.notifier)
+                  .removeItem(item.product.id)),
         ],
       ),
     );
@@ -237,12 +564,17 @@ class PosScreenState extends ConsumerState<PosScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('$cartItemCount item di keranjang', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            Text('$cartItemCount item di keranjang',
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
             ElevatedButton.icon(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const PosCartScreen())),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (context) => const PosCartScreen())),
               icon: const Icon(Icons.shopping_cart_checkout),
               label: const Text('Lihat Keranjang'),
-              style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+              style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20))),
             ),
           ],
         ),
@@ -281,7 +613,8 @@ class _ProductList extends ConsumerWidget {
                 onPressed: navigateToScanner,
                 tooltip: 'Pindai Barcode',
               ),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               filled: true,
               fillColor: Colors.white,
             ),
@@ -295,39 +628,48 @@ class _ProductList extends ConsumerWidget {
                   final filteredProducts = products.where((p) {
                     final query = searchController.text.toLowerCase();
                     if (query.isEmpty) return true;
-                    return p.name.toLowerCase().contains(query) || (p.sku ?? '').toLowerCase().contains(query);
+                    return p.name.toLowerCase().contains(query) ||
+                        (p.sku ?? '').toLowerCase().contains(query);
                   }).toList();
 
                   if (filteredProducts.isEmpty) {
                     return const Center(child: Text('Produk tidak ditemukan.'));
                   }
 
-                  return ListView.builder(
-                    padding: const EdgeInsets.only(top: 4),
-                    itemCount: filteredProducts.length,
-                    itemBuilder: (context, index) {
-                      final product = filteredProducts[index];
-                      Promotion? activePromo;
-                      try {
-                        activePromo = promotions.firstWhere((promo) =>
-                            promo.product.id == product.id && DateTime.now().isBefore(promo.endDate));
-                      } catch (e) {
-                        activePromo = null;
-                      }
-                      return _ProductListItem(
-                        product: product,
-                        activePromo: activePromo,
-                        onTap: () => onProductTapped(product, activePromo),
-                      );
-                    },
-                  );
+                  return GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 250,
+                        childAspectRatio: 0.8,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                      ),
+                      itemCount: filteredProducts.length,
+                      itemBuilder: (context, index) {
+                        final product = filteredProducts[index];
+                        Promotion? activePromo;
+                        try {
+                          activePromo = promotions.firstWhere((promo) =>
+                              promo.product.id == product.id &&
+                              DateTime.now().isBefore(promo.endDate));
+                        } catch (e) {
+                          activePromo = null;
+                        }
+                        return _ProductListItem(
+                          product: product,
+                          activePromo: activePromo,
+                          onTap: () => onProductTapped(product, activePromo),
+                        );
+                      });
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (err, stack) => Center(child: Text('Error memuat promo: $err')),
+                error: (err, stack) =>
+                    Center(child: Text('Error memuat promo: $err')),
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (err, stack) => Center(child: Text('Error memuat produk: $err')),
+            error: (err, stack) =>
+                Center(child: Text('Error memuat produk: $err')),
           ),
         ),
       ],
@@ -348,7 +690,8 @@ class _ProductListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currencyFormatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final currencyFormatter =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
     Widget priceWidget;
 
     if (activePromo != null) {
@@ -397,62 +740,48 @@ class _ProductListItem extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8.0),
-                child: (product.image != null && product.image!.isNotEmpty)
-                    ? Image.network(
-                        product.image!,
-                        width: 50,
-                        height: 50,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Icon(Icons.broken_image),
-                      )
-                    : Container(
-                        width: 50,
-                        height: 50,
-                        color: const Color(0xFFE0E6ED),
-                        child: const Icon(Icons.image_not_supported, color: Color(0xFFBDC3C7)),
-                      ),
-              ),
-              const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      product.name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF2C3E50),
-                          fontSize: 15),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (product.sku != null && product.sku!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2.0),
-                        child: Text('SKU: ${product.sku}',
-                            style: const TextStyle(
-                                fontSize: 12, color: Color(0xFF7F8C8D))),
-                      ),
-                  ],
+                child: Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8.0),
+                    child: (product.image != null && product.image!.isNotEmpty)
+                        ? Image.network(
+                            product.image!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(Icons.broken_image),
+                          )
+                        : Container(
+                            color: const Color(0xFFE0E6ED),
+                            child: const Icon(Icons.image_not_supported,
+                                color: Color(0xFFBDC3C7)),
+                          ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.center,
+              const SizedBox(height: 8),
+              Text(
+                product.name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF2C3E50),
+                  fontSize: 15,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Stok: ${product.stock}',
                       style: const TextStyle(
                           fontSize: 12,
                           color: Color(0xFF3498DB),
                           fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 4),
                   if (product.price > 0) priceWidget,
                 ],
               ),

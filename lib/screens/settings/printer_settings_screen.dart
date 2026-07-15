@@ -208,9 +208,10 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
             if (_connectionType == 'usb')
               ListTile(
                 title: const Text('Pilih & Pasangkan Printer USB'),
-                subtitle: Text(_defaultPrinterName != null && _connectionType == 'usb'
-                    ? 'Terpilih: $_defaultPrinterName'
-                    : 'Ketuk untuk memilih'),
+                subtitle: Text(
+                    _defaultPrinterName != null && _connectionType == 'usb'
+                        ? 'Terpilih: $_defaultPrinterName'
+                        : 'Ketuk untuk memilih'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
                   final selectedDevice = await Navigator.of(context).push(
@@ -325,11 +326,9 @@ class _BluetoothDeviceDialogState extends State<_BluetoothDeviceDialog> {
           future: _devicesFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: CircularProgressIndicator());
+              return const Center(child: CircularProgressIndicator());
             } else if (snapshot.hasError) {
-              return Center(
-                  child: Text('Error: ${snapshot.error}'));
+              return Center(child: Text('Error: ${snapshot.error}'));
             } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
               return const Center(
                 child: Padding(

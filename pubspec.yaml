@@ -38,10 +38,10 @@ dependencies:
   bluetooth_low_energy: ^6.1.0
   esc_pos_utils_plus: ^2.0.4
   shared_preferences: ^2.0.18
-  blue_thermal_printer: ^1.2.3 # DIUBAH: Migrasi dari thermal_printer
   permission_handler: ^12.0.1
   universal_html: ^2.2.4
   http: ^1.5.0
+  blue_thermal_printer: ^1.2.3
 
 
 dev_dependencies:

@@ -46,7 +46,7 @@ class _PrintingServiceStub implements PrintingService {
 
   @override
   Future<List<dynamic>> scanUsbDevices(
-      {Duration timeout = const Duration(seconds: 2)}) async =>
+          {Duration timeout = const Duration(seconds: 2)}) async =>
       [];
 
   @override
