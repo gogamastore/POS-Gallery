@@ -1,8 +1,6 @@
-import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:typed_data';
 
-import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,10 +8,10 @@ import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
 import 'package:myapp/models/order.dart';
 import 'package:myapp/screens/main_tab_controller.dart';
+import 'package:myapp/screens/settings/printer_picker.dart';
 import 'package:myapp/services/printing_service.dart';
 import 'package:myapp/utils/pdf_invoice_exporter.dart';
 import 'package:printing/printing.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html;
 
 class PrintPageScreen extends ConsumerStatefulWidget {
@@ -60,59 +58,52 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
 
   Future<void> _handlePrint() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context, rootNavigator: true);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final address = prefs.getString('default_printer_address');
-
-      if (address == null) {
-        final selectedDevice = await showDialog<BluetoothDevice>(
-          context: context,
-          builder: (dialogContext) => _BluetoothDeviceDialog(),
-        );
-
-        if (selectedDevice != null) {
-          await _printWithDevice(selectedDevice);
-        }
+      // Cetak ke printer default bila sudah ada; jika belum, minta pengguna
+      // memilih printer lebih dulu lalu cetak ke perangkat itu.
+      final saved = await _printingService.loadDefaultPrinter();
+      if (saved != null) {
+        await _printToDefault();
       } else {
-        await _printWithSavedDevice();
+        if (!mounted) return;
+        final selected = await showPrinterPicker(context, usb: false);
+        if (selected != null) await _printToDevice(selected);
       }
     } catch (e, s) {
       developer.log('Error preparing for print: $e', stackTrace: s);
       if (!mounted) return;
-      navigator.pop();
       scaffoldMessenger.showSnackBar(
         SnackBar(content: Text('Gagal mempersiapkan print: $e')),
       );
     }
   }
 
-  Future<void> _printWithSavedDevice() async {
-    final navigator = Navigator.of(context, rootNavigator: true);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
+  void _showPrintingDialog(String message) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Dialog(
+      builder: (context) => Dialog(
         child: Padding(
-          padding: EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(20.0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('Mencetak ke printer tersimpan...'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Text(message),
             ],
           ),
         ),
       ),
     );
+  }
 
+  Future<void> _printToDefault() async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    _showPrintingDialog('Mencetak ke printer tersimpan...');
     try {
-      await _printingService.connectToSavedDefault();
-      await _printingService.printReceipt(widget.order);
-      await _printingService.disconnect();
-
+      await _printingService.printToSavedDefault(widget.order);
       if (!mounted) return;
       navigator.pop();
       scaffoldMessenger.showSnackBar(
@@ -128,33 +119,12 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
     }
   }
 
-  Future<void> _printWithDevice(BluetoothDevice device) async {
+  Future<void> _printToDevice(PrinterDevice device) async {
     final navigator = Navigator.of(context, rootNavigator: true);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Dialog(
-        child: Padding(
-          padding: EdgeInsets.all(20.0),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('Mencetak...'),
-            ],
-          ),
-        ),
-      ),
-    );
-
+    _showPrintingDialog('Mencetak...');
     try {
-      await _printingService.connectToDevice(device);
-      await _printingService.printReceipt(widget.order);
-      await _printingService.disconnect();
-
+      await _printingService.printOrder(device, widget.order);
       if (!mounted) return;
       navigator.pop();
       scaffoldMessenger.showSnackBar(
@@ -355,8 +325,10 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
                 onPressed: () {
                   Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute(
+                        // Tab 0 = Penjualan (POS). Sebelumnya index 1 karena
+                        // ada tab Dashboard di depan; kini Dashboard dihapus.
                         builder: (context) =>
-                            const MainTabController(initialIndex: 1)),
+                            const MainTabController(initialIndex: 0)),
                     (Route<dynamic> route) => false,
                   );
                 },
@@ -370,122 +342,6 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// --- REFACTORED BLUETOOTH DIALOG ---
-class _BluetoothDeviceDialog extends StatefulWidget {
-  @override
-  State<_BluetoothDeviceDialog> createState() => _BluetoothDeviceDialogState();
-}
-
-class _BluetoothDeviceDialogState extends State<_BluetoothDeviceDialog> {
-  final PrintingService _printingService = getPrintingService();
-  // Use a Future to hold the result of getting bonded devices.
-  late Future<List<dynamic>> _devicesFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadDevices();
-  }
-
-  // Fetches the bonded devices and assigns the future.
-  void _loadDevices() {
-    setState(() {
-      _devicesFuture = _printingService.getBondedDevices();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text('Pilih Printer Bluetooth'),
-          IconButton(
-              icon: const Icon(Ionicons.refresh),
-              onPressed: _loadDevices, // Reload the list of devices
-              tooltip: 'Scan Ulang'),
-        ],
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        // Use a FutureBuilder to handle loading, error, and data states.
-        child: FutureBuilder<List<dynamic>>(
-          future: _devicesFuture,
-          builder: (context, snapshot) {
-            // 1. Loading state
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Mencari printer...'),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            // 2. Error state
-            if (snapshot.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    'Gagal memuat printer:\n${snapshot.error}',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              );
-            }
-
-            // 3. Empty or no data state
-            final devices = snapshot.data ?? [];
-            if (devices.isEmpty) {
-              return const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    'Tidak ada printer ter-pairing. Pastikan Bluetooth menyala dan printer sudah di-pairing di pengaturan HP Anda.',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              );
-            }
-
-            // 4. Data loaded successfully state
-            return ListView.builder(
-              shrinkWrap: true,
-              itemCount: devices.length,
-              itemBuilder: (context, index) {
-                final device = devices[index] as BluetoothDevice;
-                final name = device.name ?? 'Unknown Device';
-                final address = device.address ?? 'No Address';
-                return ListTile(
-                  leading: const Icon(Ionicons.print_outline),
-                  title: Text(name),
-                  subtitle: Text(address),
-                  onTap: () => Navigator.of(context).pop(device),
-                );
-              },
-            );
-          },
-        ),
-      ),
-      actions: [
-        TextButton(
-          child: const Text('Batal'),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ],
     );
   }
 }

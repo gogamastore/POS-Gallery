@@ -65,7 +65,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDIl-RgVHblRZx-MZHlhRWEOK90iw6eEyI',
+    apiKey: 'AIzaSyB-T0DTO-zNURk9eKVNz1jYMMRbVPMupuA',
     appId: '1:889047904404:web:15008b6e4ff1cfbfa5c481',
     messagingSenderId: '889047904404',
     projectId: 'gallerypos',

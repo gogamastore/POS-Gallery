@@ -1,106 +1,149 @@
 import 'dart:async';
-import 'package:blue_thermal_printer/blue_thermal_printer.dart';
+import 'dart:convert';
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
+// Facade paket ini juga meng-ekspor esc_pos_utils_plus (Generator, PaperSize,
+// PosStyles, CapabilityProfile) dan Uint8List lewat foundation.
+import 'package:flutter_thermal_printer/flutter_thermal_printer.dart';
+// Printer & ConnectionType tidak ikut di-export oleh library utama paket,
+// jadi diimpor langsung dari modul model-nya.
+import 'package:flutter_thermal_printer/utils/printer.dart';
 import 'package:intl/intl.dart';
-import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/order.dart';
 import 'printing_service.dart';
 
-// Real implementation using blue_thermal_printer
+const _kDefaultPrinterKey = 'default_printer_json';
+
+// Implementasi asli memakai flutter_thermal_printer (universal_ble untuk BLE
+// di Android & Windows, Win32 spooler untuk USB di Windows).
 class _PrintingServiceImpl implements PrintingService {
-  final BlueThermalPrinter _bluetooth = BlueThermalPrinter.instance;
+  final FlutterThermalPrinter _plugin = FlutterThermalPrinter.instance;
   final currencyFormatter =
       NumberFormat.currency(locale: 'id_ID', symbol: '', decimalDigits: 0);
 
-  final _scanResultsController = StreamController<List<BluetoothDevice>>.broadcast();
-  final _connectionStatusController = StreamController<int?>.broadcast();
-
-  StreamSubscription? _stateSubscription;
+  final _devicesController =
+      StreamController<List<PrinterDevice>>.broadcast();
+  StreamSubscription? _pluginSub;
 
   _PrintingServiceImpl() {
-    _stateSubscription = _bluetooth.onStateChanged().listen((state) {
-      _connectionStatusController.add(state);
+    // Terjemahkan daftar Printer milik paket menjadi model netral kita.
+    _pluginSub = _plugin.devicesStream.listen((printers) {
+      if (_devicesController.isClosed) return;
+      _devicesController.add(printers.map(_toDevice).toList());
     });
   }
 
   @override
-  Stream<List<dynamic>> get scanResults => _scanResultsController.stream;
+  bool get supportsUsb => Platform.isWindows;
 
   @override
-  Stream<int?> get connectionStatus => _connectionStatusController.stream;
+  Stream<List<PrinterDevice>> get devicesStream => _devicesController.stream;
 
   @override
-  Future<List<dynamic>> getBondedDevices() async {
+  Future<void> startDiscovery(
+      {bool bluetooth = true, bool usb = false}) async {
+    final types = <ConnectionType>[];
+    if (bluetooth) types.add(ConnectionType.BLE);
+    // USB hanya di Windows (PC tanpa Bluetooth). Diabaikan di Android.
+    if (usb && Platform.isWindows) types.add(ConnectionType.USB);
+    if (types.isEmpty) return;
     try {
-      return await _bluetooth.getBondedDevices();
+      await _plugin.getPrinters(connectionTypes: types);
     } catch (e) {
-      if (kDebugMode) {
-        print('getBondedDevices failed: $e');
-      }
+      if (kDebugMode) print('startDiscovery failed: $e');
       rethrow;
     }
   }
 
   @override
-  Future<String> getBleAvailability() async {
-    // blue_thermal_printer handles standard Bluetooth, not BLE scanning specifically.
-    return 'not_applicable';
-  }
-
-  @override
-  Future<void> enableBle() async {
-     // Not needed for this library
-  }
-
-  @override
-  void startScan({bool isBle = false}) {
-    // blue_thermal_printer gets bonded devices, not a continuous scan.
-    _bluetooth.getBondedDevices().then((devices) {
-      if (!_scanResultsController.isClosed) {
-        _scanResultsController.add(devices);
-      }
-    }).catchError((e) {
-       if (kDebugMode) {
-        print('getBondedDevices failed: $e');
-      }
-      if (!_scanResultsController.isClosed) {
-        _scanResultsController.addError(e);
-      }
-    });
-  }
-
-  @override
-  void stopScan() {
-    // Not applicable as getBondedDevices is a one-time call.
-  }
-
-  @override
-  Future<void> connectToDevice(dynamic device, {bool isBle = false}) async {
-    if (device is BluetoothDevice) {
-      try {
-        await _bluetooth.connect(device);
-      } catch (e) {
-        if (kDebugMode) {
-          print('connectToDevice failed: $e');
-        }
-        rethrow;
-      }
-    }
-  }
-
-  @override
-  Future<void> disconnect() async {
+  Future<void> stopDiscovery() async {
     try {
-      await _bluetooth.disconnect();
+      await _plugin.stopScan();
     } catch (e) {
-       if (kDebugMode) {
-        print('disconnect failed: $e');
-      }
+      if (kDebugMode) print('stopDiscovery failed: $e');
     }
   }
 
+  // ── Pemetaan model ────────────────────────────────────────────────────────
+  PrinterDevice _toDevice(Printer p) => PrinterDevice(
+        name: (p.name?.isNotEmpty ?? false) ? p.name! : 'Printer',
+        address: p.address ?? '',
+        connection: p.connectionType == ConnectionType.USB
+            ? PrinterConnection.usb
+            : PrinterConnection.bluetooth,
+        isConnected: p.isConnected ?? false,
+        vendorId: p.vendorId,
+        productId: p.productId,
+      );
+
+  Printer _toPrinter(PrinterDevice d) => Printer(
+        name: d.name,
+        address: d.address,
+        connectionType: d.connection == PrinterConnection.usb
+            ? ConnectionType.USB
+            : ConnectionType.BLE,
+        vendorId: d.vendorId,
+        productId: d.productId,
+      );
+
+  // ── Cetak ─────────────────────────────────────────────────────────────────
+  @override
+  Future<void> printOrder(PrinterDevice device, Order order,
+      {int paperSize = 80}) async {
+    final printer = _toPrinter(device);
+    final bytes = await buildReceiptBytes(order, paperSize: paperSize);
+
+    // Untuk BLE perlu koneksi dulu; untuk USB Windows connect() bernilai true
+    // tanpa aksi. Bila gagal terhubung, lempar error yang jelas ke UI.
+    final connected = await _plugin.connect(printer);
+    if (!connected) {
+      throw Exception(
+          'Gagal terhubung ke printer "${device.name}". Pastikan printer menyala dan berada dalam jangkauan.');
+    }
+
+    try {
+      await _plugin.printData(printer, bytes, longData: true);
+      // Beri jeda agar data sempat terkirim sebelum koneksi diputus.
+      await Future.delayed(const Duration(milliseconds: 600));
+    } finally {
+      await _plugin.disconnect(printer);
+    }
+  }
+
+  @override
+  Future<void> printToSavedDefault(Order order, {int paperSize = 80}) async {
+    final device = await loadDefaultPrinter();
+    if (device == null) {
+      throw Exception('Belum ada printer default yang tersimpan.');
+    }
+    await printOrder(device, order, paperSize: paperSize);
+  }
+
+  // ── Printer default ────────────────────────────────────────────────────────
+  @override
+  Future<void> saveDefaultPrinter(PrinterDevice device) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kDefaultPrinterKey, jsonEncode(device.toJson()));
+  }
+
+  @override
+  Future<PrinterDevice?> loadDefaultPrinter() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kDefaultPrinterKey);
+    if (raw == null) return null;
+    try {
+      return PrinterDevice.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>);
+    } catch (e) {
+      if (kDebugMode) print('loadDefaultPrinter parse failed: $e');
+      return null;
+    }
+  }
+
+  // ── Penyusun struk (ESC/POS) — dipertahankan dari implementasi sebelumnya ──
   @override
   Future<Uint8List> buildReceiptBytes(Order order, {int paperSize = 80}) async {
     final profile = await CapabilityProfile.load();
@@ -110,15 +153,19 @@ class _PrintingServiceImpl implements PrintingService {
 
     bytes.addAll(generator.setStyles(const PosStyles(align: PosAlign.center)));
     bytes.addAll(generator.text('GALLERY MAKASSAR',
-        styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2)));
-    bytes.addAll(generator.text('Jl. Borong Raya No. 100', styles: const PosStyles(align: PosAlign.center)));
-    bytes.addAll(generator.text('Telp: 0895635299075', styles: const PosStyles(align: PosAlign.center)));
+        styles: const PosStyles(
+            align: PosAlign.center, bold: true, height: PosTextSize.size2)));
+    bytes.addAll(generator.text('Jl. Borong Raya No. 100',
+        styles: const PosStyles(align: PosAlign.center)));
+    bytes.addAll(generator.text('Telp: 0895635299075',
+        styles: const PosStyles(align: PosAlign.center)));
     bytes.addAll(generator.hr());
 
     bytes.addAll(generator.text('No: ${order.id?.substring(0, 8) ?? 'N/A'}',
         styles: const PosStyles(align: PosAlign.left)));
     final DateTime created = (order.createdAt ?? order.date).toDate();
-    bytes.addAll(generator.text('Tanggal: ${DateFormat('dd/MM/yy HH:mm').format(created)}'));
+    bytes.addAll(generator
+        .text('Tanggal: ${DateFormat('dd/MM/yy HH:mm').format(created)}'));
     bytes.addAll(generator.text('Kasir: ${order.kasir}'));
     if (order.customer != null && order.customer!.isNotEmpty) {
       bytes.addAll(generator.text('Customer: ${order.customer!}'));
@@ -180,8 +227,10 @@ class _PrintingServiceImpl implements PrintingService {
     ]));
 
     bytes.addAll(generator.hr());
-    bytes.addAll(generator.text('Terima Kasih!', styles: const PosStyles(align: PosAlign.center)));
-    bytes.addAll(generator.text('Barang yang sudah dibeli tidak dapat dikembalikan.',
+    bytes.addAll(generator.text('Terima Kasih!',
+        styles: const PosStyles(align: PosAlign.center)));
+    bytes.addAll(generator.text(
+        'Barang yang sudah dibeli tidak dapat dikembalikan.',
         styles: const PosStyles(align: PosAlign.center)));
 
     bytes.addAll(generator.feed(2));
@@ -190,73 +239,10 @@ class _PrintingServiceImpl implements PrintingService {
     return Uint8List.fromList(bytes);
   }
 
-  @override
-  Future<void> sendBytesToPrinter(List<int> bytes) async {
-    try {
-      await _bluetooth.writeBytes(Uint8List.fromList(bytes));
-    } catch (e) {
-      if (kDebugMode) {
-        print('sendBytesToPrinter failed: $e');
-      }
-      rethrow;
-    }
-  }
-
-  @override
-  Future<void> printReceipt(Order order, {int paperSize = 80}) async {
-    final bytes = await buildReceiptBytes(order, paperSize: paperSize);
-    await sendBytesToPrinter(bytes);
-  }
-
-  @override
-  Future<void> connectToSavedDefault() async {
-    final prefs = await SharedPreferences.getInstance();
-    final address = prefs.getString('default_printer_address');
-    if (address == null) return;
-
-    try {
-      final devices = await _bluetooth.getBondedDevices();
-      final match = devices.firstWhere((d) => d.address == address, orElse: () => throw Exception('Device not found'));
-      await connectToDevice(match);
-    } catch (e) {
-      if (kDebugMode) {
-        print('connectToSavedDefault failed: $e');
-      }
-    }
-  }
-
-  // --- USB Methods are NOT SUPPORTED by blue_thermal_printer ---
-  // --- They are kept for interface compatibility but do nothing. ---
-
-  @override
-  Future<List<dynamic>> scanUsbDevices(
-      {Duration timeout = const Duration(seconds: 2)}) async {
-    if (kDebugMode) {
-      print('scanUsbDevices is not supported in this implementation.');
-    }
-    return [];
-  }
-
-  @override
-  Future<bool> isUsbDeviceOnline(dynamic device) async {
-    if (kDebugMode) {
-      print('isUsbDeviceOnline is not supported in this implementation.');
-    }
-    return false;
-  }
-
-  @override
-  Future<bool> pairUsbDevice(dynamic device) async {
-    if (kDebugMode) {
-      print('pairUsbDevice is not supported in this implementation.');
-    }
-    return false;
-  }
-
+  // ignore: unused_element
   void dispose() {
-    _scanResultsController.close();
-    _connectionStatusController.close();
-    _stateSubscription?.cancel();
+    _pluginSub?.cancel();
+    _devicesController.close();
   }
 }
 

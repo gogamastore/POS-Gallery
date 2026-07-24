@@ -67,7 +67,16 @@ android {
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            // Bila key.properties (keystore rilis) sudah ada, tanda tangani
+            // dengan kunci rilis resmi. Selama masih uji coba dan belum ada
+            // keystore, jatuh ke debug signing agar APK release tetap bisa
+            // di-build & dipasang untuk pengujian. GANTI ke keystore rilis
+            // sebelum distribusi/Play Store.
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
             shrinkResources false
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

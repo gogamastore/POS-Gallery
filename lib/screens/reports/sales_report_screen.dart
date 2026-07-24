@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -136,8 +137,42 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            // Filter kanal penjualan: Semua (default) / POS / Marketplace
+            Text('Sumber', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildSourceChip(notifier, state, SalesSourceFilter.all, 'Semua'),
+                  _buildSourceChip(notifier, state, SalesSourceFilter.pos, 'POS'),
+                  _buildSourceChip(
+                      notifier, state, SalesSourceFilter.marketplace, 'Marketplace'),
+                ],
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSourceChip(SalesReportNotifier notifier, SalesReportState state,
+      SalesSourceFilter source, String label) {
+    final bool isActive = state.sourceFilter == source;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8.0),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: isActive,
+        onSelected: (selected) {
+          if (selected) notifier.setSourceFilter(source);
+        },
+        selectedColor: Theme.of(context).primaryColor,
+        labelStyle: TextStyle(color: isActive ? Colors.white : Colors.black),
+        backgroundColor: Colors.grey[200],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -253,8 +288,9 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
   Widget _buildTrendsCard(List<app_order.Order> data) {
     final Map<DateTime, double> dailyTotals = {};
     for (var order in data) {
-      final date = DateTime(order.date.toDate().year,
-          order.date.toDate().month, order.date.toDate().day);
+      // Kelompokkan pakai waktu diproses agar konsisten dengan rentang query.
+      final d = _reportDate(order).toDate();
+      final date = DateTime(d.year, d.month, d.day);
       dailyTotals.update(date, (value) => value + order.total.toDouble(),
           ifAbsent: () => order.total.toDouble());
     }
@@ -379,6 +415,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
             columns: const [
               DataColumn(label: Text('Tanggal')),
               DataColumn(label: Text('Pelanggan')),
+              DataColumn(label: Text('Kasir')),
               DataColumn(label: Text('Total'), numeric: true),
               DataColumn(label: Text('Status')),
             ],
@@ -391,8 +428,10 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                 },
                 cells: [
                   DataCell(Text(DateFormat('dd MMM yyyy')
-                      .format(order.date.toDate()))),
-                  DataCell(Text(order.customerDetails?['name'] ?? 'N/A',
+                      .format(_reportDate(order).toDate()))),
+                  DataCell(Text(_customerName(order),
+                      overflow: TextOverflow.ellipsis)),
+                  DataCell(Text(_kasirName(order),
                       overflow: TextOverflow.ellipsis)),
                   DataCell(Text(formatter.formatCurrency(order.total.toDouble()))),
                   DataCell(Text(_translateStatus(order.status))),
@@ -403,6 +442,28 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
         ),
       ),
     );
+  }
+
+  /// Tanggal yang ditampilkan/dikelompokkan di laporan = waktu pesanan
+  /// DIPROSES (`validatedAt`), bukan waktu pembeli membuatnya (`date`).
+  /// Fallback ke `date` untuk data lama yang belum punya validatedAt.
+  Timestamp _reportDate(app_order.Order order) => order.validatedAt ?? order.date;
+
+  /// Nama pelanggan. Penjualan POS umumnya tanpa pelanggan → 'Toko Offline'.
+  String _customerName(app_order.Order order) {
+    final fromDetails = order.customerDetails?['name'] as String?;
+    final name = (fromDetails?.trim().isNotEmpty ?? false)
+        ? fromDetails!.trim()
+        : (order.customer?.trim() ?? '');
+    return name.isEmpty ? 'Toko Offline' : name;
+  }
+
+  /// Nama kasir/validator. Terisi untuk penjualan POS dan pesanan marketplace
+  /// yang sudah divalidasi; selain itu tampilkan '-'.
+  String _kasirName(app_order.Order order) {
+    final kasir = order.kasir.trim();
+    if (kasir.isEmpty || kasir == 'N/A') return '-';
+    return kasir;
   }
 
   // --- FUNGSI DIKEMBALIKAN ---
@@ -475,8 +536,8 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                                   overflow: TextOverflow.ellipsis)),
                       const SizedBox(height: 16),
                       Text(
-                          'Tanggal: ${DateFormat('dd MMMM yyyy').format(order.date.toDate())}'),
-                      Text('Pelanggan: ${order.customerDetails?['name'] ?? 'N/A'}'),
+                          'Tanggal: ${DateFormat('dd MMMM yyyy').format(_reportDate(order).toDate())}'),
+                      Text('Pelanggan: ${_customerName(order)}'),
                       const SizedBox(height: 4),
                       Row(
                         children: [

@@ -32,7 +32,7 @@
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <application
-        android:label="Gallery POS"
+        android:label="Manafidh Store"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity

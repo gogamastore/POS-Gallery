@@ -1,4 +1,5 @@
 // lib/screens/auth/auth_screen.dart
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
@@ -28,8 +29,7 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Login Gagal: Email atau password tidak valid')),
+        SnackBar(content: Text(_loginErrorMessage(e))),
       );
     } finally {
       if (mounted) {
@@ -38,6 +38,33 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
         });
       }
     }
+  }
+
+  // Menerjemahkan error login menjadi pesan yang jelas. Kode yang benar-benar
+  // soal kredensial ditampilkan ramah; error lain (jaringan, konfigurasi API
+  // key, dsb.) TIDAK lagi disamarkan sebagai "password salah" agar penyebab
+  // sebenarnya terlihat dan bisa ditindaklanjuti.
+  String _loginErrorMessage(Object error) {
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'invalid-credential':
+        case 'wrong-password':
+        case 'user-not-found':
+        case 'invalid-email':
+        case 'user-disabled':
+          return 'Email atau password salah.';
+        case 'network-request-failed':
+          return 'Gagal terhubung ke server. Periksa koneksi internet Anda.';
+        case 'too-many-requests':
+          return 'Terlalu banyak percobaan. Silakan coba lagi beberapa saat.';
+        default:
+          // Tampilkan kode + pesan asli untuk error tak terduga
+          // (mis. API key diblokir referrer di desktop).
+          final msg = error.message ?? '';
+          return 'Login gagal (${error.code})${msg.isNotEmpty ? ': $msg' : ''}';
+      }
+    }
+    return 'Login gagal: $error';
   }
 
   @override
@@ -57,8 +84,8 @@ class AuthScreenState extends ConsumerState<AuthScreen> {
                 Container(
                   alignment: Alignment.center,
                   padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Image.network(
-                    'https://firebasestorage.googleapis.com/v0/b/gallery-makassar.firebasestorage.app/o/GM%20logo.png?alt=media&token=35855c49-17b5-4a6d-9887-45134c7ad829',
+                  child: Image.asset(
+                    'assets/images/Manafidh Logo.png',
                     width: 100,
                     height: 100,
                   ),

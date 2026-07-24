@@ -2,36 +2,48 @@ import 'dart:typed_data';
 
 import 'package:myapp/models/order.dart';
 
-// Only export the factory function, not the implementation classes.
+import 'printer_device.dart';
+
+// Ekspor factory-nya saja; implementasi dipilih saat kompilasi:
+//  • web / platform tanpa dart:io → stub (no-op).
+//  • Android / Windows / desktop  → implementasi asli flutter_thermal_printer.
 export 'thermal_printer_stub.dart'
     if (dart.library.io) 'thermal_printer_real.dart' show getPrintingService;
 
-/// Abstract interface for the printing service.
-/// This allows the UI to depend on a contract rather than a concrete implementation,
-/// and allows for conditional (stub/real) implementations for web vs. mobile.
+export 'printer_device.dart';
+
+/// Kontrak layanan cetak struk termal.
+///
+/// Model discovery bersifat STREAM: panggil [startDiscovery] lalu dengarkan
+/// [devicesStream]. Daftar akan bertambah saat perangkat baru ditemukan.
 abstract class PrintingService {
-  Stream<int?> get connectionStatus;
-  Stream<List<dynamic>> get scanResults;
+  /// True hanya di platform yang mendukung USB (saat ini Windows). Dipakai UI
+  /// untuk menyembunyikan opsi USB di Android.
+  bool get supportsUsb;
 
-  Future<String> getBleAvailability();
-  Future<void> enableBle();
+  /// Daftar printer yang ditemukan, diperbarui secara langsung selama scan.
+  Stream<List<PrinterDevice>> get devicesStream;
 
-  void startScan({bool isBle = false});
-  void stopScan();
+  /// Mulai memindai. [bluetooth] menyalakan BLE (Android & Windows); [usb]
+  /// hanya berlaku di Windows dan diabaikan di platform lain.
+  Future<void> startDiscovery({bool bluetooth = true, bool usb = false});
 
-  Future<void> connectToDevice(dynamic device, {bool isBle = false});
-  Future<void> disconnect();
+  /// Hentikan pemindaian dan bebaskan sumber daya.
+  Future<void> stopDiscovery();
 
+  /// Susun byte ESC/POS untuk sebuah pesanan.
   Future<Uint8List> buildReceiptBytes(Order order, {int paperSize = 80});
-  Future<void> sendBytesToPrinter(List<int> bytes);
-  Future<void> printReceipt(Order order, {int paperSize = 80});
 
-  Future<List<dynamic>> scanUsbDevices(
-      {Duration timeout = const Duration(seconds: 5)});
-  Future<bool> pairUsbDevice(dynamic device);
-  Future<bool> isUsbDeviceOnline(dynamic device);
-  Future<void> connectToSavedDefault();
+  /// Cetak pesanan ke [device]: connect → kirim → disconnect.
+  Future<void> printOrder(PrinterDevice device, Order order,
+      {int paperSize = 80});
 
-  // Add this method to get bonded/paired devices
-  Future<List<dynamic>> getBondedDevices();
+  /// Cetak pesanan ke printer default yang tersimpan.
+  Future<void> printToSavedDefault(Order order, {int paperSize = 80});
+
+  /// Simpan printer default.
+  Future<void> saveDefaultPrinter(PrinterDevice device);
+
+  /// Muat printer default yang tersimpan (null bila belum ada).
+  Future<PrinterDevice?> loadDefaultPrinter();
 }

@@ -10,6 +10,9 @@ import '../../services/report_service.dart';
 // Enum untuk tipe filter
 enum SalesReportFilterType { today, yesterday, last7days, thisMonth, custom }
 
+/// Filter kanal penjualan. 'all' tampil pertama & jadi default.
+enum SalesSourceFilter { all, pos, marketplace }
+
 @immutable
 class SalesReportState {
   final DateTimeRange? selectedDateRange;
@@ -17,6 +20,7 @@ class SalesReportState {
   final bool isLoading;
   final String? errorMessage;
   final SalesReportFilterType activeFilter;
+  final SalesSourceFilter sourceFilter;
 
   // --- FIELD BARU UNTUK TOTAL LABA KOTOR & HPP ---
   final double totalGrossProfit;
@@ -28,6 +32,7 @@ class SalesReportState {
     this.isLoading = false,
     this.errorMessage,
     this.activeFilter = SalesReportFilterType.today,
+    this.sourceFilter = SalesSourceFilter.all,
     this.totalGrossProfit = 0.0, // Default value
     this.totalCogs = 0.0,      // Default value
   });
@@ -38,6 +43,7 @@ class SalesReportState {
     bool? isLoading,
     String? errorMessage,
     SalesReportFilterType? activeFilter,
+    SalesSourceFilter? sourceFilter,
     double? totalGrossProfit,
     double? totalCogs,
   }) {
@@ -47,6 +53,7 @@ class SalesReportState {
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage,
       activeFilter: activeFilter ?? this.activeFilter,
+      sourceFilter: sourceFilter ?? this.sourceFilter,
       totalGrossProfit: totalGrossProfit ?? this.totalGrossProfit,
       totalCogs: totalCogs ?? this.totalCogs,
     );
@@ -58,7 +65,46 @@ class SalesReportNotifier extends StateNotifier<SalesReportState> {
   final FirebaseFirestore _db = FirebaseFirestore.instance; // Tambahkan instance Firestore
 
   SalesReportNotifier(this._reportService) : super(const SalesReportState());
-  
+
+  /// Hasil query + perhitungan HPP/laba, SEBELUM difilter kanal (source).
+  /// Disimpan agar ganti filter Sumber tidak perlu query ulang ke Firestore.
+  List<app_order.Order> _enrichedOrders = [];
+
+  /// Ganti filter kanal penjualan (Semua / POS / Marketplace).
+  void setSourceFilter(SalesSourceFilter source) {
+    state = state.copyWith(sourceFilter: source, errorMessage: null);
+    _applyFilters();
+  }
+
+  /// Turunkan reportData + metrik dari [_enrichedOrders] sesuai filter Sumber.
+  void _applyFilters() {
+    final filtered = _enrichedOrders.where((o) {
+      switch (state.sourceFilter) {
+        case SalesSourceFilter.all:
+          return true;
+        case SalesSourceFilter.pos:
+          return o.source == 'pos';
+        case SalesSourceFilter.marketplace:
+          return o.source == 'marketplace';
+      }
+    }).toList();
+
+    double cogs = 0;
+    double gross = 0;
+    for (final o in filtered) {
+      cogs += o.cogs;
+      gross += o.grossProfit;
+    }
+
+    state = state.copyWith(
+      reportData: filtered,
+      totalCogs: cogs,
+      totalGrossProfit: gross,
+      isLoading: false,
+      errorMessage: null,
+    );
+  }
+
   void setDateRange(DateTimeRange dateRange) {
     state = state.copyWith(
         selectedDateRange: dateRange,
@@ -117,8 +163,6 @@ class SalesReportNotifier extends StateNotifier<SalesReportState> {
           doc.id: Product.fromFirestore(doc)
       };
 
-      double totalReportCogs = 0;
-      double totalReportGrossProfit = 0;
       final List<app_order.Order> ordersWithProfit = [];
 
       for (final order in orders) {
@@ -136,9 +180,6 @@ class SalesReportNotifier extends StateNotifier<SalesReportState> {
         }
         
         final orderGrossProfit = order.total.toDouble() - orderCogs;
-        
-        totalReportCogs += orderCogs;
-        totalReportGrossProfit += orderGrossProfit;
 
         ordersWithProfit.add(order.copyWith(
           cogs: orderCogs,
@@ -146,13 +187,9 @@ class SalesReportNotifier extends StateNotifier<SalesReportState> {
         ));
       }
 
-      state = state.copyWith(
-        reportData: ordersWithProfit,
-        totalCogs: totalReportCogs,
-        totalGrossProfit: totalReportGrossProfit,
-        isLoading: false,
-        errorMessage: null,
-      );
+      // Simpan hasil mentah, lalu turunkan daftar & metrik sesuai filter Sumber.
+      _enrichedOrders = ordersWithProfit;
+      _applyFilters();
 
     } on FirebaseException catch (e) {
       if (e.code == 'failed-precondition' && e.message != null) {

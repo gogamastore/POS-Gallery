@@ -32,6 +32,26 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# ── Kompatibilitas dengan MSVC 14.51 (Visual Studio Build Tools 2026) ──────────
+# Toolchain ini jauh lebih baru daripada yang diuji oleh Flutter 3.44 dan plugin
+# desktop-nya, sehingga memunculkan dua kegagalan kompilasi. Kedua setelan di
+# bawah ini ditempatkan SEBELUM add_subdirectory/plugin agar ikut menurun ke
+# semua sub-proyek (flutter, runner, dan seluruh plugin).
+#
+# 1) audioplayers_windows & permission_handler_windows menyertakan
+#    <experimental/coroutine>. Di MSVC 14.51 header ini menjadi error keras
+#    (STL1011 / C2338). Macro resmi ini menurunkannya kembali agar tetap
+#    dapat dikompilasi.
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
+# 2) MSVC 14.51 gagal berbagi berkas .pdb antar proses cl.exe paralel
+#    (C1041 / C1090 dari mspdbsrv). Menyematkan info debug langsung ke dalam
+#    .obj (/Z7) menghapus ketergantungan pada .pdb bersama sepenuhnya, sehingga
+#    seluruh kelas error PDB itu hilang. CMP0141 membuat variabel di bawah
+#    berlaku untuk semua target yang dibuat setelahnya.
+cmake_policy(SET CMP0141 NEW)
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,Profile>:Embedded>")
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

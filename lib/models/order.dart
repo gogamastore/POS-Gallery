@@ -32,6 +32,8 @@ class Order {
   // Status & Tracking
   final String status;
   final String kasir;
+  /// Kanal penjualan: 'pos' (kasir) atau 'marketplace'. Null untuk data lama.
+  final String? source;
   final bool stockUpdated;
   final String? shippingMethod;
 
@@ -59,6 +61,7 @@ class Order {
     required this.paymentStatus,
     required this.status,
     required this.kasir,
+    this.source,
     required this.stockUpdated,
     this.shippingMethod,
     // Default value untuk field baru
@@ -96,6 +99,7 @@ class Order {
       paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
       status: data['status'] as String? ?? 'N/A',
       kasir: data['kasir'] as String? ?? 'N/A',
+      source: data['source'] as String?,
       stockUpdated: data['stockUpdated'] as bool? ?? false,
       shippingMethod: data['shippingMethod'] as String?,
       // cogs & grossProfit tidak diambil dari Firestore, defaultnya 0
@@ -128,6 +132,7 @@ class Order {
       paymentStatus: paymentStatus,
       status: status,
       kasir: kasir,
+      source: source,
       stockUpdated: stockUpdated,
       shippingMethod: shippingMethod,
       cogs: cogs ?? this.cogs, // 'this.' di sini diperlukan untuk membedakan dengan parameter
@@ -138,6 +143,10 @@ class Order {
   Map<String, dynamic> toFirestore() {
     // cogs & grossProfit tidak disimpan kembali ke Firestore
     return {
+      // Penanda kanal penjualan. toFirestore() hanya dipakai saat MEMBUAT
+      // pesanan dari kasir POS, jadi selalu 'pos' di sini. Pesanan marketplace
+      // ditulis oleh checkout web/app pembeli dengan source 'marketplace'.
+      'source': 'pos',
       'date': date,
       'createdAt': createdAt ?? FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

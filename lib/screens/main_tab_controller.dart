@@ -2,11 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'dashboard/dashboard_screen.dart';
 import 'products/products_screen.dart';
 import 'purchases/purchases_screen.dart'; // Import PurchasesScreen
 import 'profile/profile_screen.dart'; // Import ProfileScreen
 import 'pos/pos_screen.dart';
+import 'orders/marketplace_orders_screen.dart';
 
 class MainTabController extends ConsumerStatefulWidget {
   final int initialIndex;
@@ -20,11 +20,11 @@ class MainTabControllerState extends ConsumerState<MainTabController> {
   late int _selectedIndex;
 
   static final List<Widget> _widgetOptions = <Widget>[
-    const DashboardScreen(),
-    const PosScreen(), // Ganti placeholder dengan PosScreen
+    const PosScreen(), // Penjualan (kasir POS)
+    const MarketplaceOrdersScreen(), // Pesanan (marketplace: biteship + midtrans)
     const ProductsScreen(),
-    const PurchasesScreen(), // Ganti placeholder dengan PurchasesScreen
-    const ProfileScreen(), // Ganti placeholder dengan ProfileScreen
+    const PurchasesScreen(),
+    const ProfileScreen(),
   ];
 
   @override
@@ -48,12 +48,12 @@ class MainTabControllerState extends ConsumerState<MainTabController> {
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
             icon: Icon(Icons.shopping_cart),
             label: 'Penjualan',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.receipt_long),
+            label: 'Pesanan',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.inventory_2),

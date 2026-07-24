@@ -18,12 +18,28 @@ class ReportService {
     required DateTime startDate,
     required DateTime endDate,
   }) async {
+    // Rentang memakai `validatedAt` (waktu pesanan DIPROSES kasir/admin),
+    // bukan `date` (waktu pembeli membuat pesanan) — agar laporan memuat
+    // pesanan yang diproses pada hari itu. Draf POS belum punya validatedAt,
+    // jadi otomatis tidak terhitung sebagai penjualan.
+    //
+    // Status mencakup DUA kanal & dua penulisan (whereIn case-sensitive):
+    //  • POS         → 'processing', 'success' (huruf kecil)
+    //  • Marketplace → 'Processing', 'shipped'/'Shipped', 'delivered'/'Delivered'
     final querySnapshot = await _db
         .collection('orders')
-        .where('status', whereIn: ['processing', 'success'])
-        .where('date', isGreaterThanOrEqualTo: startDate)
-        .where('date', isLessThanOrEqualTo: endDate)
-        .orderBy('date', descending: true)
+        .where('status', whereIn: [
+          'processing',
+          'Processing',
+          'success',
+          'shipped',
+          'Shipped',
+          'delivered',
+          'Delivered',
+        ])
+        .where('validatedAt', isGreaterThanOrEqualTo: startDate)
+        .where('validatedAt', isLessThanOrEqualTo: endDate)
+        .orderBy('validatedAt', descending: true)
         .get();
 
     return querySnapshot.docs

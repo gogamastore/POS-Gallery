@@ -119,7 +119,7 @@ class ProfileScreen extends ConsumerWidget {
                         _buildProfileMenuItem(
                           context,
                           icon: Ionicons.sparkles_outline,
-                          title: 'AI Gogama',
+                          title: 'AI Manafidh',
                           onTap: () {
                             Navigator.of(context).push(MaterialPageRoute(
                                 builder: (context) =>

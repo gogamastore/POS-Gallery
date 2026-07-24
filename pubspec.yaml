@@ -18,11 +18,12 @@ dependencies:
   intl: ^0.20.2
   firebase_auth: ^6.1.1
   firebase_storage: ^13.0.3
+  cloud_functions: ^6.0.3
   audioplayers: ^6.5.1
   ionicons: ^0.2.2
   url_launcher: ^6.3.2
   uuid: ^4.5.1
-  google_fonts: ^6.3.1
+  google_fonts: ^6.3.2
   cached_network_image: ^3.4.1
   collection: ^1.19.1
   freezed_annotation: ^3.1.0
@@ -34,14 +35,20 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.14.2
   firebase_ai: ^3.4.0
-  lucide_icons: ^0.257.0
   bluetooth_low_energy: ^6.1.0
   esc_pos_utils_plus: ^2.0.4
   shared_preferences: ^2.0.18
   permission_handler: ^12.0.1
   universal_html: ^2.2.4
   http: ^1.5.0
-  blue_thermal_printer: ^1.2.3
+  flutter_thermal_printer: ^2.2.1
+
+# ionicons 0.2.2 (versi terbaru) meng-`extends IconData` yang kini final di
+# Flutter 3.44+. Kita pakai salinan lokal yang sudah dipatch (IconData langsung)
+# agar 134+ pemakaian Ionicons.xxx tetap berjalan tanpa mengubah kode aplikasi.
+dependency_overrides:
+  ionicons:
+    path: ionicons
 
 
 dev_dependencies:
@@ -75,7 +82,7 @@ flutter_native_splash:
 
 # Konfigurasi untuk nama aplikasi
 flutter_launcher_name:
-  name: "Gallery POS"
+  name: "Manafidh Store"
 
 flutter:
   uses-material-design: true

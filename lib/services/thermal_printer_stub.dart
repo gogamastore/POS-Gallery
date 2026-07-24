@@ -1,62 +1,40 @@
-import 'dart:async';
 import 'dart:typed_data';
+
 import 'package:myapp/models/order.dart';
+
 import 'printing_service.dart';
 
-// Stub implementation for web or unsupported platforms.
+// Stub untuk web / platform tanpa dukungan printer. Semua operasi no-op.
 class _PrintingServiceStub implements PrintingService {
   @override
-  Stream<int?> get connectionStatus => Stream.value(null);
+  bool get supportsUsb => false;
 
   @override
-  Stream<List<dynamic>> get scanResults => Stream.value([]);
+  Stream<List<PrinterDevice>> get devicesStream =>
+      const Stream<List<PrinterDevice>>.empty();
 
   @override
-  Future<List<dynamic>> getBondedDevices() async => []; // Return empty list
+  Future<void> startDiscovery({bool bluetooth = true, bool usb = false}) async {}
 
   @override
-  Future<String> getBleAvailability() async => 'not_available';
+  Future<void> stopDiscovery() async {}
 
   @override
-  Future<void> enableBle() async {}
+  Future<Uint8List> buildReceiptBytes(Order order, {int paperSize = 80}) async =>
+      Uint8List(0);
 
   @override
-  void startScan({bool isBle = false}) {}
+  Future<void> printOrder(PrinterDevice device, Order order,
+      {int paperSize = 80}) async {}
 
   @override
-  void stopScan() {}
+  Future<void> printToSavedDefault(Order order, {int paperSize = 80}) async {}
 
   @override
-  Future<void> connectToDevice(dynamic device, {bool isBle = false}) async {}
+  Future<void> saveDefaultPrinter(PrinterDevice device) async {}
 
   @override
-  Future<void> disconnect() async {}
-
-  @override
-  Future<Uint8List> buildReceiptBytes(Order order, {int paperSize = 80}) async {
-    // Return an empty byte array as a placeholder.
-    return Uint8List(0);
-  }
-
-  @override
-  Future<void> sendBytesToPrinter(List<int> bytes) async {}
-
-  @override
-  Future<void> printReceipt(Order order, {int paperSize = 80}) async {}
-
-  @override
-  Future<List<dynamic>> scanUsbDevices(
-          {Duration timeout = const Duration(seconds: 2)}) async =>
-      [];
-
-  @override
-  Future<bool> isUsbDeviceOnline(dynamic device) async => false;
-
-  @override
-  Future<bool> pairUsbDevice(dynamic device) async => false;
-
-  @override
-  Future<void> connectToSavedDefault() async {}
+  Future<PrinterDevice?> loadDefaultPrinter() async => null;
 }
 
 PrintingService getPrintingService() => _PrintingServiceStub();

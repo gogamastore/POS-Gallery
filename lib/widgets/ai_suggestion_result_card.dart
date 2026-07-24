@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons/lucide_icons.dart';
 
 // A custom card widget for displaying a specific metric (e.g., stock suggestion).
 class _MetricCard extends StatelessWidget {
@@ -122,7 +121,7 @@ class AiSuggestionResultCard extends StatelessWidget {
                   title: 'Saran Stok Bulan Depan',
                   value: nextPeriodStock,
                   unit: 'unit',
-                  icon: LucideIcons.packageCheck,
+                  icon: Icons.inventory_2,
                   iconColor: theme.colorScheme.primary,
                 ),
               ),
@@ -132,7 +131,7 @@ class AiSuggestionResultCard extends StatelessWidget {
                   title: 'Stok Pengaman',
                   value: safetyStock,
                   unit: 'unit',
-                  icon: LucideIcons.alertTriangle, // <-- NAMA IKON DIPERBAIKI
+                  icon: Icons.warning_amber_rounded,
                   iconColor: Colors.orangeAccent,
                 ),
               ),
@@ -143,7 +142,7 @@ class AiSuggestionResultCard extends StatelessWidget {
           // Analysis summary card
           _AnalysisDetailCard(
             title: 'Ringkasan Analisis',
-            icon: LucideIcons.barChartBig,
+            icon: Icons.bar_chart,
             content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -160,7 +159,7 @@ class AiSuggestionResultCard extends StatelessWidget {
           // AI reasoning card
           _AnalysisDetailCard(
             title: 'Alasan AI',
-            icon: LucideIcons.bot,
+            icon: Icons.smart_toy,
             content: Text(
               reasoning,
               style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
