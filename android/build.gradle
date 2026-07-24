@@ -1,0 +1,54 @@
+buildscript {
+    ext.kotlin_version = '2.1.0'
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.3.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath 'com.google.gms:google-services:4.4.1'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = '../build'
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+
+// AGP 8+ mewajibkan setiap modul Android punya `namespace`. Sebagian plugin
+// lama (mis. blue_thermal_printer 1.2.3 — versi terakhir, sudah tak di-update)
+// masih memakai gaya lama `package="..."` di AndroidManifest, sehingga build
+// gagal saat konfigurasi. Di sini namespace diisi otomatis dari `group` plugin
+// (nilainya sama dengan package aslinya) hanya bila memang belum diset.
+//
+// PENTING: blok ini harus didaftarkan SEBELUM `evaluationDependsOn(':app')`
+// di bawah — kalau tidak, proyek sudah terlanjur dievaluasi dan Gradle menolak
+// afterEvaluate ("project is already evaluated").
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android {
+                if (namespace == null) {
+                    namespace project.group.toString()
+                }
+            }
+        }
+    }
+}
+
+subprojects {
+    project.evaluationDependsOn(':app')
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.layout.buildDirectory
+}

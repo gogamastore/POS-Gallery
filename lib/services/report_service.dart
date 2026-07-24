@@ -1,0 +1,356 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/order.dart' as app_order;
+import '../models/product.dart';
+import '../models/expense_item.dart';
+import '../models/customer_report.dart';
+import '../models/profit_loss_data.dart';
+import '../models/purchase.dart';
+import '../models/receivable_data.dart';
+import '../models/product_sales_data.dart';
+import '../models/product_sales_history.dart';
+
+class ReportService {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  Future<List<app_order.Order>> getOrdersByDateRange({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    // Rentang memakai `validatedAt` (waktu pesanan DIPROSES kasir/admin),
+    // bukan `date` (waktu pembeli membuat pesanan) — agar laporan memuat
+    // pesanan yang diproses pada hari itu. Draf POS belum punya validatedAt,
+    // jadi otomatis tidak terhitung sebagai penjualan.
+    //
+    // Status mencakup DUA kanal & dua penulisan (whereIn case-sensitive):
+    //  • POS         → 'processing', 'success' (huruf kecil)
+    //  • Marketplace → 'Processing', 'shipped'/'Shipped', 'delivered'/'Delivered'
+    final querySnapshot = await _db
+        .collection('orders')
+        .where('status', whereIn: [
+          'processing',
+          'Processing',
+          'success',
+          'shipped',
+          'Shipped',
+          'delivered',
+          'Delivered',
+        ])
+        .where('validatedAt', isGreaterThanOrEqualTo: startDate)
+        .where('validatedAt', isLessThanOrEqualTo: endDate)
+        .orderBy('validatedAt', descending: true)
+        .get();
+
+    return querySnapshot.docs
+        .map((doc) => app_order.Order.fromFirestore(doc))
+        .toList();
+  }
+
+  Future<ProfitLossData> getProfitLossData({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final ordersSnapshot = await _db
+        .collection('orders')
+        .where('validatedAt', isGreaterThanOrEqualTo: startDate)
+        .where('validatedAt', isLessThanOrEqualTo: endDate)
+        .where('status', isEqualTo: 'success')
+        .get();
+
+    double totalRevenue = 0;
+    double totalCOGS = 0;
+
+    for (var doc in ordersSnapshot.docs) {
+      final order = app_order.Order.fromFirestore(doc);
+      totalRevenue += order.total.toDouble();
+
+      for (var item in order.products) {
+        try {
+          final productId = item['productId'] as String?;
+          final quantity = (item['quantity'] as num? ?? 0);
+
+          if (productId != null) {
+            final productDoc =
+                await _db.collection('products').doc(productId).get();
+            if (productDoc.exists) {
+              final product = Product.fromFirestore(productDoc);
+              totalCOGS += (product.purchasePrice ?? 0.0) * quantity;
+            }
+          }
+        } catch (e) {
+          // Lanjutkan jika ada error
+        }
+      }
+    }
+
+    final expensesSnapshot = await _db
+        .collection('operational_expenses')
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThanOrEqualTo: endDate)
+        .get();
+
+    double totalOperationalExpenses = expensesSnapshot.docs
+        .fold(0, (sum, doc) => sum + ExpenseItem.fromFirestore(doc).amount);
+
+    final double grossProfit = totalRevenue - totalCOGS;
+    final double netProfit = grossProfit - totalOperationalExpenses;
+
+    return ProfitLossData(
+      totalRevenue: totalRevenue,
+      totalCOGS: totalCOGS,
+      grossProfit: grossProfit,
+      totalOperationalExpenses: totalOperationalExpenses,
+      netProfit: netProfit,
+    );
+  }
+
+  Future<List<ExpenseItem>> getOperationalExpenses({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final querySnapshot = await _db
+        .collection('operational_expenses')
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThanOrEqualTo: endDate)
+        .get();
+    return querySnapshot.docs
+        .map((doc) => ExpenseItem.fromFirestore(doc))
+        .toList();
+  }
+
+  Future<List<CustomerReport>> generateCustomerReport({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final querySnapshot = await _db
+        .collection('orders')
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThan: endDate.add(const Duration(days: 1)))
+        .get();
+
+    final reportMap = <String, CustomerReport>{};
+
+    for (var doc in querySnapshot.docs) {
+      final order = app_order.Order.fromFirestore(doc);
+
+      final customerId = order.customerId;
+      final customerName = order.customer ?? 'Customer';
+
+      if (customerId == null || customerId.isEmpty) continue;
+
+      final report = reportMap.putIfAbsent(
+        customerId,
+        () => CustomerReport(
+          id: customerId,
+          name: customerName,
+          transactionCount: 0,
+          totalSpent: 0,
+          receivables: 0,
+          orders: [],
+        ),
+      );
+
+      final isUnpaid = order.paymentStatus.toLowerCase() == 'unpaid';
+      final isValidStatus =
+          ['processing', 'success'].contains(order.status.toLowerCase());
+      final newReceivables = report.receivables +
+          (isUnpaid && isValidStatus ? order.total.toDouble() : 0);
+
+      reportMap[customerId] = report.copyWith(
+        transactionCount: report.transactionCount + 1,
+        totalSpent: report.totalSpent + order.total.toDouble(),
+        receivables: newReceivables,
+        orders: [...report.orders, order]
+          ..sort((a, b) => b.date.compareTo(a.date)),
+      );
+    }
+
+    final reportList = reportMap.values.toList();
+    reportList.sort((a, b) => b.totalSpent.compareTo(a.totalSpent));
+    return reportList;
+  }
+
+  Future<List<ProductSalesData>> generateProductSalesReport({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final query = _db
+        .collection('orders')
+        .where('status', whereIn: ['processing', 'success'])
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThan: endDate.add(const Duration(days: 1)));
+
+    final allOrderDocs = await query.get();
+    final productsSnapshot = await _db.collection('products').get();
+    final productsMap = {
+      for (var doc in productsSnapshot.docs) doc.id: Product.fromFirestore(doc)
+    };
+    final salesAggregation = <String, int>{};
+
+    for (var orderDoc in allOrderDocs.docs) {
+      final orderData = app_order.Order.fromFirestore(orderDoc);
+      for (var productInOrder in orderData.products) {
+        final productId = productInOrder['productId'] as String?;
+        final quantity = (productInOrder['quantity'] as num? ?? 0).toInt();
+        if (productId != null) {
+          salesAggregation.update(productId, (value) => value + quantity,
+              ifAbsent: () => quantity);
+        }
+      }
+    }
+
+    final List<ProductSalesData> reportData = [];
+    salesAggregation.forEach((productId, totalSold) {
+      if (productsMap.containsKey(productId)) {
+        reportData.add(ProductSalesData(
+            product: productsMap[productId]!, totalSold: totalSold));
+      }
+    });
+
+    reportData.sort((a, b) => b.totalSold.compareTo(a.totalSold));
+    return reportData;
+  }
+
+  Future<List<ProductSalesHistory>> getProductSalesHistory({
+    required String productId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    try {
+      final query = _db
+          .collection('orders')
+          .where('productIds', arrayContains: productId)
+          .where('date', isGreaterThanOrEqualTo: startDate)
+          .where('date', isLessThan: endDate.add(const Duration(days: 1)));
+
+      final allOrderDocs = await query.get();
+      final List<ProductSalesHistory> history = [];
+
+      for (var orderDoc in allOrderDocs.docs) {
+        final orderData = app_order.Order.fromFirestore(orderDoc);
+        final transactionDate =
+            orderData.validatedAt?.toDate() ?? orderData.date.toDate();
+
+        for (var item in orderData.products) {
+          if (item['productId'] == productId) {
+            history.add(
+              ProductSalesHistory(
+                orderId: orderDoc.id,
+                customerName: orderData.customer ?? 'N/A',
+                orderDate: transactionDate,
+                quantity: (item['quantity'] as num? ?? 0).toInt(),
+              ),
+            );
+          }
+        }
+      }
+
+      history.sort((a, b) => b.orderDate.compareTo(a.orderDate));
+      return history;
+    } on FirebaseException catch (e) {
+      if (e.code == 'failed-precondition' && e.message != null) {
+        final urlMatch = RegExp(
+                r'(https://console.firebase.google.com/project/[^/]+/database/[^/]+/indexes[?]create_composite=.*?)\s')
+            .firstMatch(e.message!);
+        if (urlMatch != null) {
+          final url = urlMatch.group(1)!;
+          developer.log(
+            '\n========================================\n'
+            'SALIN LINK UNTUK MEMBUAT INDEX FIRESTORE:\n\n'
+            '$url\n\n'
+            '========================================\n',
+            name: 'Firestore Index Trap (Dashboard)',
+            level: 1200,
+          );
+        }
+      }
+      developer.log('Firebase error in getProductSalesHistory: ${e.toString()}',
+          name: 'ReportService', level: 1000);
+      rethrow;
+    } catch (e, stackTrace) {
+      developer.log('Generic error in getProductSalesHistory: ${e.toString()}',
+          name: 'ReportService', level: 1000, error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> markOrderAsPaid(String orderId) async {
+    await _db
+        .collection('orders')
+        .doc(orderId)
+        .update({'paymentStatus': 'paid'});
+  }
+
+  Future<app_order.Order> getOrderById(String orderId) async {
+    final doc = await _db.collection('orders').doc(orderId).get();
+    if (doc.exists) {
+      return app_order.Order.fromFirestore(doc);
+    }
+    throw Exception('Pesanan tidak ditemukan.');
+  }
+
+  Future<void> processPurchasePayment({
+    required String purchaseId,
+    required String paymentMethod,
+    String? notes,
+  }) async {
+    await _db.collection('purchase_transactions').doc(purchaseId).update({
+      'paymentStatus': 'paid',
+      'paymentMethod': paymentMethod,
+      'paymentNotes': notes,
+      'paidAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<List<Purchase>> generatePayableReport({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final query = _db
+        .collection('purchase_transactions')
+        .where('paymentMethod', whereIn: ['credit', 'Credit'])
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThan: endDate.add(const Duration(days: 1)));
+
+    final snapshot = await query.get();
+    final List<Purchase> payableList = snapshot.docs
+        .map((doc) => Purchase.fromMap(doc.id, doc.data()))
+        .toList();
+    payableList.sort((a, b) => a.date.compareTo(b.date));
+    return payableList;
+  }
+
+  Future<List<ReceivableData>> generateReceivableReport({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final query = _db
+        .collection('orders')
+        .where('paymentStatus', whereIn: ['unpaid', 'Unpaid'])
+        .where('date', isGreaterThanOrEqualTo: startDate)
+        .where('date', isLessThan: endDate.add(const Duration(days: 1)));
+
+    final snapshot = await query.get();
+    final List<ReceivableData> receivableList = [];
+
+    const validOrderStates = ['processing', 'success'];
+
+    for (var doc in snapshot.docs) {
+      final order = app_order.Order.fromFirestore(doc);
+      if (validOrderStates.contains(order.status.toLowerCase())) {
+        receivableList.add(
+          ReceivableData(
+            orderId: order.id ?? '',
+            customerName: order.customer ?? 'N/A',
+            orderDate: order.date.toDate(),
+            orderStatus: order.status,
+            totalReceivable: order.total.toDouble(),
+          ),
+        );
+      }
+    }
+    receivableList.sort((a, b) => a.orderDate.compareTo(b.orderDate));
+    return receivableList;
+  }
+}

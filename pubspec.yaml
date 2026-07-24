@@ -1,0 +1,95 @@
+name: myapp
+description: "A new Flutter project."
+
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 8.2.1+18
+
+environment:
+  sdk: '>=3.2.3 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  firebase_core: ^4.2.0
+  cloud_firestore: ^6.0.3
+  flutter_riverpod: ^2.6.1
+  intl: ^0.20.2
+  firebase_auth: ^6.1.1
+  firebase_storage: ^13.0.3
+  cloud_functions: ^6.0.3
+  audioplayers: ^6.5.1
+  ionicons: ^0.2.2
+  url_launcher: ^6.3.2
+  uuid: ^4.5.1
+  google_fonts: ^6.3.2
+  cached_network_image: ^3.4.1
+  collection: ^1.19.1
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.9.0
+  mobile_scanner: ^7.0.1
+  image_picker: ^1.2.0
+  fl_chart: ^1.1.1
+  provider: ^6.1.5+1
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  firebase_ai: ^3.4.0
+  bluetooth_low_energy: ^6.1.0
+  esc_pos_utils_plus: ^2.0.4
+  shared_preferences: ^2.0.18
+  permission_handler: ^12.0.1
+  universal_html: ^2.2.4
+  http: ^1.5.0
+  flutter_thermal_printer: ^2.2.1
+
+# ionicons 0.2.2 (versi terbaru) meng-`extends IconData` yang kini final di
+# Flutter 3.44+. Kita pakai salinan lokal yang sudah dipatch (IconData langsung)
+# agar 134+ pemakaian Ionicons.xxx tetap berjalan tanpa mengubah kode aplikasi.
+dependency_overrides:
+  ionicons:
+    path: ionicons
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.11
+  freezed: ^3.2.3
+  json_serializable: ^6.8.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.7
+
+# flutter_native_splash-development.yaml is used for dev builds
+# flutter_native_splash.yaml is used for production builds
+flutter_native_splash:
+  # This package generates native code to customize Flutter's default white native splash screen
+  # with background color and splash image.
+  # Customize the parameters below, and run the following command in the terminal:
+  # flutter pub run flutter_native_splash:create
+  # To restore Flutter's default white splash screen, run the following command in the terminal:
+  # flutter pub run flutter_native_splash:remove
+
+  # IMPORTANT: This configuration is ignored when using flutter_native_splash.yaml
+  # It is only used when you run:
+  # flutter pub run flutter_native_splash:create --path=flutter_native_splash-development.yaml
+  background_image: "assets/logo/splash-animation.gif"
+  
+  # The image parameter allows you to specify an image used in the splash screen.  It must be a
+  # png file and should be sized for the target platform.
+  image: "assets/logo/logo.png"
+
+# Konfigurasi untuk nama aplikasi
+flutter_launcher_name:
+  name: "Manafidh Store"
+
+flutter:
+  uses-material-design: true
+
+  # Menambahkan deklarasi aset untuk suara dan logo
+  assets:
+    - assets/sounds/
+    - assets/logo/
+    - assets/images/
+    - assets/fonts/
