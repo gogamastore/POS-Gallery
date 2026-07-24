@@ -3,10 +3,11 @@ import 'package:intl/intl.dart';
 
 import '../../services/receipt_settings.dart';
 
-/// Form pengaturan identitas toko & catatan footer untuk struk.
+/// Form pengaturan identitas toko & catatan footer untuk struk, dengan pilihan
+/// **label toko** (cabang). Setiap label punya dokumennya sendiri di Firestore
+/// (`struk/{label}`), sehingga tiap cabang bisa punya kop struk berbeda.
 ///
-/// Setelah disimpan, sebuah pratinjau (preview) struk ditampilkan di bawah
-/// form memakai contoh transaksi, sehingga pengguna langsung melihat hasilnya.
+/// Setelah disimpan, sebuah pratinjau (preview) struk ditampilkan di bawah form.
 class ReceiptSettingsScreen extends StatefulWidget {
   const ReceiptSettingsScreen({super.key});
 
@@ -23,25 +24,44 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
   bool _loading = true;
   bool _saving = false;
 
+  /// Daftar label toko (ID dokumen di koleksi `struk`).
+  List<String> _labels = const [];
+
+  /// Label yang sedang dipilih/aktif untuk perangkat ini.
+  String? _selectedLabel;
+
   /// Terisi setelah menyimpan → memicu tampilnya preview.
   ReceiptSettings? _preview;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _init();
   }
 
-  Future<void> _load() async {
-    final s = await ReceiptSettings.load();
+  Future<void> _init() async {
+    final labels = await ReceiptSettings.listLabels();
+    var active = await ReceiptSettings.getActiveLabel();
+    // Bila label aktif tak ada di daftar (mis. terhapus), pilih yang pertama.
+    if (active == null || !labels.contains(active)) {
+      active = labels.isNotEmpty ? labels.first : null;
+      if (active != null) await ReceiptSettings.setActiveLabel(active);
+    }
+    final settings = await ReceiptSettings.load();
     if (!mounted) return;
     setState(() {
-      _storeNameController.text = s.storeName;
-      _storeAddressController.text = s.storeAddress;
-      _storePhoneController.text = s.storePhone;
-      _footerNoteController.text = s.footerNote;
+      _labels = labels;
+      _selectedLabel = active;
+      _fillForm(settings);
       _loading = false;
     });
+  }
+
+  void _fillForm(ReceiptSettings s) {
+    _storeNameController.text = s.storeName;
+    _storeAddressController.text = s.storeAddress;
+    _storePhoneController.text = s.storePhone;
+    _footerNoteController.text = s.footerNote;
   }
 
   @override
@@ -60,10 +80,84 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
         footerNote: _footerNoteController.text.trim(),
       );
 
+  /// Pindah ke label toko lain → jadikan aktif & muat pengaturannya ke form.
+  Future<void> _onSelectLabel(String? label) async {
+    if (label == null || label == _selectedLabel) return;
+    setState(() {
+      _selectedLabel = label;
+      _preview = null;
+    });
+    await ReceiptSettings.setActiveLabel(label);
+    final s = await ReceiptSettings.load();
+    if (!mounted) return;
+    setState(() => _fillForm(s));
+  }
+
+  /// Dialog membuat label toko baru.
+  Future<void> _createLabel() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Buat Label Toko Baru'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Nama label',
+            hintText: 'mis. Cabang Antang',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (_) => Navigator.pop(ctx, controller.text.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Buat')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return;
+
+    if (!ReceiptSettings.isValidLabel(name)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Label tidak valid — hindari karakter "/" dan nama khusus.')),
+      );
+      return;
+    }
+    if (_labels.contains(name)) {
+      // Sudah ada → cukup pindah ke label itu.
+      await _onSelectLabel(name);
+      return;
+    }
+    await ReceiptSettings.setActiveLabel(name);
+    if (!mounted) return;
+    setState(() {
+      _labels = [..._labels, name]..sort();
+      _selectedLabel = name;
+      _preview = null;
+      // Isi form dibiarkan apa adanya, agar bisa dijadikan dasar cabang baru.
+    });
+  }
+
   Future<void> _save() async {
     final messenger = ScaffoldMessenger.of(context);
+    final label = _selectedLabel;
+    if (label == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Pilih atau buat label toko dulu.')),
+      );
+      return;
+    }
     final settings = _currentInput();
-
     if (settings.storeName.isEmpty) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Nama toko tidak boleh kosong.')),
@@ -72,14 +166,102 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
     }
 
     setState(() => _saving = true);
-    await settings.save();
-    if (!mounted) return;
-    setState(() {
-      _saving = false;
-      _preview = settings;
-    });
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Pengaturan struk disimpan.')),
+    try {
+      await settings.saveForLabel(label);
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _preview = settings;
+        if (!_labels.contains(label)) _labels = [..._labels, label]..sort();
+      });
+      messenger.showSnackBar(
+        SnackBar(content: Text('Struk untuk "$label" disimpan.')),
+      );
+    } catch (e) {
+      // Cache lokal sudah tersimpan; hanya sinkronisasi ke cloud yang gagal
+      // (mis. aturan Firestore menolak). Tetap tampilkan preview.
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _preview = settings;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Tersimpan di perangkat, gagal sinkron ke cloud: $e'),
+        ),
+      );
+    }
+  }
+
+  Widget _buildLabelCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.storefront_outlined, size: 20),
+                const SizedBox(width: 8),
+                Text('Label Toko',
+                    style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Label yang dipilih dipakai untuk mencetak struk di perangkat ini. '
+              'Berguna untuk toko cabang — tiap label punya kop struk sendiri.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Pilih label toko',
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedLabel,
+                        isExpanded: true,
+                        hint: const Text('Belum ada label dipilih'),
+                        items: _labels
+                            .map((l) => DropdownMenuItem(
+                                  value: l,
+                                  child: Text(l,
+                                      overflow: TextOverflow.ellipsis),
+                                ))
+                            .toList(),
+                        onChanged: _saving ? null : _onSelectLabel,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: _saving ? null : _createLabel,
+                  icon: const Icon(Icons.add),
+                  tooltip: 'Buat label baru',
+                ),
+              ],
+            ),
+            if (_labels.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Belum ada label toko. Ketuk + untuk membuat label pertama.',
+                  style:
+                      TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -92,6 +274,8 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                _buildLabelCard(),
+                const SizedBox(height: 20),
                 Text('Identitas Toko',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
@@ -129,7 +313,8 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
                   textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(
                     labelText: 'Catatan Footer',
-                    hintText: 'Contoh: Barang yang sudah dibeli tidak dapat dikembalikan.',
+                    hintText:
+                        'Contoh: Barang yang sudah dibeli tidak dapat dikembalikan.',
                     border: OutlineInputBorder(),
                     alignLabelWithHint: true,
                   ),
@@ -155,8 +340,12 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
                     children: [
                       const Icon(Icons.receipt_long_outlined, size: 20),
                       const SizedBox(width: 8),
-                      Text('Preview Struk',
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Expanded(
+                        child: Text(
+                          'Preview Struk — ${_selectedLabel ?? ''}',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -213,7 +402,8 @@ class _ReceiptPreview extends StatelessWidget {
           color: Colors.white,
           border: Border.all(color: Colors.grey.shade300),
           boxShadow: const [
-            BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 5)),
+            BoxShadow(
+                color: Colors.black12, blurRadius: 10, offset: Offset(0, 5)),
           ],
         ),
         child: Column(
@@ -250,7 +440,8 @@ class _ReceiptPreview extends StatelessWidget {
               Text(item['name'] as String, style: textStyle),
               line(
                 '  ${item['qty']} x ${currency.format(item['price'])}',
-                currency.format((item['qty'] as int) * (item['price'] as double)),
+                currency
+                    .format((item['qty'] as int) * (item['price'] as double)),
               ),
               const SizedBox(height: 4),
             ],

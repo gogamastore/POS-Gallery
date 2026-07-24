@@ -199,7 +199,8 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
                     if (_receipt.storeAddress.isNotEmpty)
                       Center(
                           child: Text(_receipt.storeAddress,
-                              style: textStyle, textAlign: TextAlign.center)),
+                              style: boldTextStyle.copyWith(fontSize: 14),
+                            textAlign: TextAlign.center)),
                     if (_receipt.storePhone.isNotEmpty)
                       Center(
                           child: Text('Telp: ${_receipt.storePhone}',
