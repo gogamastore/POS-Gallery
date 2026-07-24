@@ -129,6 +129,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.13"
+  blue_thermal_printer:
+    dependency: "direct main"
+    description:
+      path: blue_thermal_printer_local
+      relative: true
+    source: path
+    version: "1.2.3"
   bluetooth_low_energy:
     dependency: "direct main"
     description:

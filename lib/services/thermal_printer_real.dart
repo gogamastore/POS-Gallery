@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
+// Transport Bluetooth Classic (SPP/RFCOMM) untuk Android. Dipakai HANYA di
+// cabang Android; di Windows objek ini tidak pernah dipanggil.
+import 'package:blue_thermal_printer/blue_thermal_printer.dart' as blue_thermal;
 // Facade paket ini juga meng-ekspor esc_pos_utils_plus (Generator, PaperSize,
 // PosStyles, CapabilityProfile) dan Uint8List lewat foundation.
 import 'package:flutter_thermal_printer/flutter_thermal_printer.dart';
@@ -18,10 +21,20 @@ import 'receipt_settings.dart';
 
 const _kDefaultPrinterKey = 'default_printer_json';
 
-// Implementasi asli memakai flutter_thermal_printer (universal_ble untuk BLE
-// di Android & Windows, Win32 spooler untuk USB di Windows).
+// Transport dibagi per platform:
+//  • Android + Bluetooth → blue_thermal_printer (Bluetooth Classic / SPP).
+//    flutter_thermal_printer hanya memakai BLE, sementara mayoritas printer
+//    struk termal adalah perangkat Bluetooth Classic — sehingga koneksi BLE
+//    "berhasil" tetapi data ESC/POS tidak pernah sampai ke printer.
+//  • Windows (USB / BLE)  → flutter_thermal_printer (Win32 spooler / universal_ble).
 class _PrintingServiceImpl implements PrintingService {
   final FlutterThermalPrinter _plugin = FlutterThermalPrinter.instance;
+
+  // Instance blue_thermal_printer. Hanya berupa objek Dart + MethodChannel;
+  // tidak ada panggilan native sampai method-nya dipakai di cabang Android.
+  final blue_thermal.BlueThermalPrinter _bt =
+      blue_thermal.BlueThermalPrinter.instance;
+
   final currencyFormatter =
       NumberFormat.currency(locale: 'id_ID', symbol: '', decimalDigits: 0);
 
@@ -29,25 +42,54 @@ class _PrintingServiceImpl implements PrintingService {
       StreamController<List<PrinterDevice>>.broadcast();
   StreamSubscription? _pluginSub;
 
+  // Snapshot terakhir. Daftar bonded Android hanya di-emit SEKALI, sedangkan
+  // stream broadcast tidak menyangga event — tanpa cache ini, pendengar yang
+  // subscribe sedikit terlambat (mis. StreamBuilder di picker) akan kehilangan
+  // emisi itu dan loading selamanya. Cache di-replay ke setiap pendengar baru.
+  List<PrinterDevice> _lastDevices = const <PrinterDevice>[];
+
   _PrintingServiceImpl() {
     // Terjemahkan daftar Printer milik paket menjadi model netral kita.
     _pluginSub = _plugin.devicesStream.listen((printers) {
       if (_devicesController.isClosed) return;
-      _devicesController.add(printers.map(_toDevice).toList());
+      // Di Android transport Bluetooth memakai blue_thermal_printer (Classic).
+      // Abaikan emisi flutter_thermal_printer di sini agar snapshot [] miliknya
+      // tidak menimpa daftar bonded yang sudah ditemukan.
+      if (Platform.isAndroid) return;
+      _emit(printers.map(_toDevice).toList());
     });
+  }
+
+  // Simpan snapshot lalu siarkan. Dipakai semua sumber discovery.
+  void _emit(List<PrinterDevice> devices) {
+    _lastDevices = devices;
+    if (!_devicesController.isClosed) _devicesController.add(devices);
   }
 
   @override
   bool get supportsUsb => Platform.isWindows;
 
   @override
-  Stream<List<PrinterDevice>> get devicesStream => _devicesController.stream;
+  Stream<List<PrinterDevice>> get devicesStream async* {
+    // Pendengar baru langsung menerima snapshot terakhir, lalu update live.
+    yield _lastDevices;
+    yield* _devicesController.stream;
+  }
 
   @override
   Future<void> startDiscovery(
       {bool bluetooth = true, bool usb = false}) async {
+    // Android + Bluetooth: pakai Bluetooth Classic. blue_thermal_printer tidak
+    // memindai secara live, melainkan mengambil daftar perangkat yang sudah
+    // DIPASANGKAN (paired) di Pengaturan Bluetooth. Printer wajib di-pair dulu.
+    if (bluetooth && Platform.isAndroid) {
+      await _discoverBondedBluetooth();
+      return;
+    }
+
     final types = <ConnectionType>[];
-    if (bluetooth) types.add(ConnectionType.BLE);
+    // BLE hanya relevan untuk Windows di sini (Android sudah ditangani di atas).
+    if (bluetooth && Platform.isWindows) types.add(ConnectionType.BLE);
     // USB hanya di Windows (PC tanpa Bluetooth). Diabaikan di Android.
     if (usb && Platform.isWindows) types.add(ConnectionType.USB);
     if (types.isEmpty) return;
@@ -59,8 +101,34 @@ class _PrintingServiceImpl implements PrintingService {
     }
   }
 
+  // Ambil printer Bluetooth Classic yang sudah dipasangkan dan dorong sekali ke
+  // stream perangkat agar UI picker menampilkannya.
+  Future<void> _discoverBondedBluetooth() async {
+    try {
+      // Timeout agar tidak menggantung tanpa batas bila native tak merespons —
+      // lebih baik memunculkan error di UI daripada loading selamanya.
+      final bonded = await _bt
+          .getBondedDevices()
+          .timeout(const Duration(seconds: 8));
+      if (_devicesController.isClosed) return;
+      _emit(bonded
+          .map((d) => PrinterDevice(
+                name: (d.name?.isNotEmpty ?? false) ? d.name! : 'Printer',
+                address: d.address ?? '',
+                connection: PrinterConnection.bluetooth,
+              ))
+          .toList());
+    } catch (e) {
+      if (kDebugMode) print('getBondedDevices failed: $e');
+      rethrow;
+    }
+  }
+
   @override
   Future<void> stopDiscovery() async {
+    // Android memakai daftar bonded (bukan scan berkelanjutan) — tak ada yang
+    // perlu dihentikan.
+    if (Platform.isAndroid) return;
     try {
       await _plugin.stopScan();
     } catch (e) {
@@ -94,8 +162,17 @@ class _PrintingServiceImpl implements PrintingService {
   @override
   Future<void> printOrder(PrinterDevice device, Order order,
       {int paperSize = 80}) async {
-    final printer = _toPrinter(device);
     final bytes = await buildReceiptBytes(order, paperSize: paperSize);
+
+    // Android + Bluetooth → Bluetooth Classic (SPP) lewat blue_thermal_printer.
+    if (Platform.isAndroid &&
+        device.connection == PrinterConnection.bluetooth) {
+      await _printClassicBluetooth(device, bytes);
+      return;
+    }
+
+    // Windows (USB / BLE) → flutter_thermal_printer.
+    final printer = _toPrinter(device);
 
     // Untuk BLE perlu koneksi dulu; untuk USB Windows connect() bernilai true
     // tanpa aksi. Bila gagal terhubung, lempar error yang jelas ke UI.
@@ -111,6 +188,41 @@ class _PrintingServiceImpl implements PrintingService {
       await Future.delayed(const Duration(milliseconds: 600));
     } finally {
       await _plugin.disconnect(printer);
+    }
+  }
+
+  // Cetak lewat Bluetooth Classic (SPP): connect → tunggu soket siap → tulis
+  // byte ESC/POS → jeda agar terkirim penuh → disconnect.
+  Future<void> _printClassicBluetooth(
+      PrinterDevice device, Uint8List bytes) async {
+    final target = blue_thermal.BluetoothDevice(device.name, device.address);
+
+    // Pastikan tidak ada koneksi lama yang menggantung sebelum menyambung baru.
+    if (await _bt.isConnected ?? false) {
+      await _bt.disconnect();
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+
+    try {
+      await _bt.connect(target);
+    } catch (_) {
+      throw Exception(
+          'Gagal terhubung ke printer "${device.name}". Pastikan printer menyala, sudah dipasangkan (paired) di Pengaturan Bluetooth, dan berada dalam jangkauan.');
+    }
+
+    // Beri jeda agar soket SPP benar-benar siap sebelum menulis.
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!(await _bt.isConnected ?? false)) {
+      throw Exception(
+          'Koneksi ke printer "${device.name}" terputus sebelum mencetak.');
+    }
+
+    try {
+      await _bt.writeBytes(bytes);
+      // Jeda agar seluruh data ESC/POS terkirim sebelum koneksi diputus.
+      await Future.delayed(const Duration(milliseconds: 800));
+    } finally {
+      await _bt.disconnect();
     }
   }
 
