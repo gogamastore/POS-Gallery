@@ -10,8 +10,8 @@
 ;  Hasil: installer\output\ManafidhStore-Setup-8.2.1.exe
 ; ============================================================================
 
-#define MyAppName "Manafidh Store"
-#define MyAppVersion "8.2.1"
+#define MyAppName "Manafidh Office"
+#define MyAppVersion "8.2.2"
 #define MyAppPublisher "Gallery Makassar"
 #define MyAppExeName "myapp.exe"
 ; Folder hasil `flutter build windows --release` (relatif ke file .iss ini):

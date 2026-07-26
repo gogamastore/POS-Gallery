@@ -30,6 +30,7 @@ class _PrinterPickerDialog extends StatefulWidget {
 class _PrinterPickerDialogState extends State<_PrinterPickerDialog> {
   final PrintingService _service = getPrintingService();
   String? _error;
+  bool _permissionDenied = false;
 
   @override
   void initState() {
@@ -39,15 +40,26 @@ class _PrinterPickerDialogState extends State<_PrinterPickerDialog> {
 
   Future<void> _start() async {
     try {
-      // Izin Bluetooth hanya relevan & tersedia di Android.
+      // Izin Bluetooth hanya relevan & tersedia di Android. Untuk melihat &
+      // menyambung printer yang sudah dipasangkan, plugin (versi patch lokal)
+      // hanya butuh BLUETOOTH_CONNECT; BLUETOOTH_SCAN diminta agar aman untuk
+      // aksi Bluetooth lain. Lokasi TIDAK diperlukan lagi.
       if (!widget.usb &&
           !kIsWeb &&
           defaultTargetPlatform == TargetPlatform.android) {
-        await [
-          Permission.bluetoothScan,
+        final statuses = await [
           Permission.bluetoothConnect,
-          Permission.location,
+          Permission.bluetoothScan,
         ].request();
+
+        // getBondedDevices native akan gagal tanpa BLUETOOTH_CONNECT. Berhenti
+        // dengan pesan jelas + opsi buka Pengaturan, alih-alih loading terus.
+        if (statuses[Permission.bluetoothConnect] != PermissionStatus.granted) {
+          if (mounted) {
+            setState(() => _permissionDenied = true);
+          }
+          return;
+        }
       }
       await _service.startDiscovery(
         bluetooth: !widget.usb,
@@ -86,13 +98,34 @@ class _PrinterPickerDialogState extends State<_PrinterPickerDialog> {
       ),
       content: SizedBox(
         width: double.maxFinite,
-        child: _error != null
+        child: _permissionDenied
             ? Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text('Gagal memindai:\n$_error',
-                    textAlign: TextAlign.center),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Ionicons.lock_closed_outline, size: 40),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Izin Bluetooth diperlukan untuk menampilkan printer yang sudah dipasangkan.\n\nAktifkan izin "Perangkat di sekitar" untuk aplikasi ini.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      icon: const Icon(Ionicons.settings_outline),
+                      label: const Text('Buka Pengaturan'),
+                      onPressed: () => openAppSettings(),
+                    ),
+                  ],
+                ),
               )
-            : StreamBuilder<List<PrinterDevice>>(
+            : _error != null
+                ? Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text('Gagal memindai:\n$_error',
+                        textAlign: TextAlign.center),
+                  )
+                : StreamBuilder<List<PrinterDevice>>(
                 stream: _service.devicesStream,
                 builder: (context, snapshot) {
                   final all = snapshot.data ?? const <PrinterDevice>[];

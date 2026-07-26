@@ -26,6 +26,7 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
   late TextEditingController _nameController;
   late TextEditingController _skuController;
   late TextEditingController _priceController;
+  late TextEditingController _weightController;
   late TextEditingController _descriptionController;
 
   String? _selectedCategoryId;
@@ -39,6 +40,7 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
     _nameController = TextEditingController(text: widget.product.name);
     _skuController = TextEditingController(text: widget.product.sku);
     _priceController = TextEditingController(text: widget.product.price.toStringAsFixed(0));
+    _weightController = TextEditingController(text: widget.product.weightGram.toString());
     _descriptionController = TextEditingController(text: widget.product.description);
     _selectedCategoryId = widget.product.categoryId;
   }
@@ -48,6 +50,7 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
     _nameController.dispose();
     _skuController.dispose();
     _priceController.dispose();
+    _weightController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
@@ -116,6 +119,7 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
         name: _nameController.text,
         sku: _skuController.text,
         price: newPrice,
+        weightGram: int.tryParse(_weightController.text) ?? 0,
         description: _descriptionController.text,
         categoryId: _selectedCategoryId,
         image: imageUrl,
@@ -228,6 +232,17 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
               _buildCategoryDropdown(),
               const SizedBox(height: 16),
               _buildPriceFields(currencyFormatter),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _weightController,
+                decoration: const InputDecoration(
+                  labelText: 'Berat Produk (gram)',
+                  hintText: 'Contoh: 200',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
               const SizedBox(height: 16),
               _buildTextField(_descriptionController, 'Deskripsi', 'Masukkan deskripsi produk', maxLines: 4, optional: true),
             ],

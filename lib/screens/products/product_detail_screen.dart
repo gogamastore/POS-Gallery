@@ -308,7 +308,18 @@ class ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 20), 
+        const SizedBox(height: 20),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInfoTile(
+              title: 'Berat Produk',
+              value: '${_currentProduct.weightGram} gram',
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
         // Baris kedua: Harga Jual atau Promo
         priceDisplayWidget,
       ],

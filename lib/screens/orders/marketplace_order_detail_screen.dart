@@ -138,6 +138,14 @@ class _MarketplaceOrderDetailScreenState
     final paymentStatus = data['paymentStatus'] as String? ?? 'unpaid';
     final paymentMethod = data['paymentMethod'] as String? ?? '-';
     final products = (data['products'] as List?) ?? [];
+    // Berat total pesanan = Σ (weightGram × qty). Fallback 200gr/produk bila
+    // beratnya belum diisi — sama seperti perhitungan ongkir di checkout.
+    final totalWeightGram = products.fold<int>(0, (acc, p) {
+      final m = p as Map;
+      final w = (m['weightGram'] as num?)?.toInt() ?? 0;
+      final q = (m['quantity'] as num?)?.toInt() ?? 0;
+      return acc + (w > 0 ? w : 200) * q;
+    });
     final subtotal = (data['subtotal'] as num?)?.toDouble() ?? 0;
     final shippingFee = (data['shippingFee'] as num?)?.toDouble() ?? 0;
     final total = (data['total'] as num?)?.toDouble() ?? 0;
@@ -203,6 +211,7 @@ class _MarketplaceOrderDetailScreenState
               _card('Ringkasan', [
                 _row('Subtotal', _currency.format(subtotal)),
                 _row('Ongkir', _currency.format(shippingFee)),
+                _row('Berat Total Pesanan', '$totalWeightGram gram'),
                 _row('Total', _currency.format(total), bold: true),
               ]),
 

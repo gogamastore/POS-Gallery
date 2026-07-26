@@ -24,6 +24,7 @@ class AddProductScreenState extends ConsumerState<AddProductScreen> {
   late TextEditingController _priceController;
   late TextEditingController _purchasePriceController;
   late TextEditingController _stockController;
+  late TextEditingController _weightController;
   late TextEditingController _descriptionController;
 
   String? _selectedCategoryId;
@@ -39,6 +40,7 @@ class AddProductScreenState extends ConsumerState<AddProductScreen> {
     _priceController = TextEditingController();
     _purchasePriceController = TextEditingController();
     _stockController = TextEditingController();
+    _weightController = TextEditingController();
     _descriptionController = TextEditingController();
   }
 
@@ -49,6 +51,7 @@ class AddProductScreenState extends ConsumerState<AddProductScreen> {
     _priceController.dispose();
     _purchasePriceController.dispose();
     _stockController.dispose();
+    _weightController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
@@ -106,15 +109,17 @@ class AddProductScreenState extends ConsumerState<AddProductScreen> {
       final price = double.tryParse(_priceController.text) ?? 0.0;
       final purchasePrice = double.tryParse(_purchasePriceController.text) ?? 0.0;
       final stock = int.tryParse(_stockController.text) ?? 0;
+      final weightGram = int.tryParse(_weightController.text) ?? 0;
       final description = _descriptionController.text;
 
       final newProduct = Product(
-        id: '', 
+        id: '',
         name: name,
         sku: sku,
         price: price,
         purchasePrice: purchasePrice,
         stock: stock,
+        weightGram: weightGram,
         description: description,
         categoryId: _selectedCategoryId,
         image: imageUrl,
@@ -412,6 +417,17 @@ class AddProductScreenState extends ConsumerState<AddProductScreen> {
             }
             return null;
           },
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _weightController,
+          decoration: const InputDecoration(
+            labelText: 'Berat Produk (gram)',
+            hintText: 'Contoh: 200',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
         ),
       ],
     );
