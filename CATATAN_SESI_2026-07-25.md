@@ -99,4 +99,4 @@ flutter run   # atau: flutter build apk
 - Folder `blue_print_pos/` bisa dihapus karena hanya referensi.
 
 ## Build windows setup.exe
-- && powershell -NoProfile -ExecutionPolicy Bypass -File "installer\build_installer.ps1" -SkipBuild
+- powershell -NoProfile -ExecutionPolicy Bypass -File "installer\build_installer.ps1" -SkipBuild

@@ -1,13 +1,16 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+// `Order` disembunyikan agar tidak bentrok dengan model Order aplikasi.
+import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../models/order.dart';
 import '../../services/biteship_service.dart';
 import '../../services/marketplace_order_actions.dart';
 import '../../widgets/marketplace_order_badges.dart';
 import 'marketplace_order_validation_screen.dart';
+import 'print_page_screen.dart';
 
 /// Detail pesanan marketplace — cerminan halaman web `dashboard/orders/[id]`.
 /// Real-time: mendengarkan dokumen `orders/{id}`.
@@ -26,6 +29,10 @@ class _MarketplaceOrderDetailScreenState
   final _currency =
       NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
   bool _processing = false;
+
+  // Snapshot terakhir pesanan, dipakai tombol Cetak di AppBar untuk membangun
+  // Order lalu membuka halaman struk.
+  DocumentSnapshot<Map<String, dynamic>>? _doc;
 
   DocumentReference<Map<String, dynamic>> get _ref =>
       FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
@@ -84,6 +91,55 @@ class _MarketplaceOrderDetailScreenState
     }
   }
 
+  /// Bangun Order dari dokumen pesanan lalu buka halaman struk untuk dicetak.
+  /// Tanggal diparse defensif karena pesanan marketplace bisa menyimpan `date`
+  /// sebagai Timestamp maupun String ISO.
+  void _printReceipt() {
+    final doc = _doc;
+    if (doc == null || !doc.exists) {
+      _snack('Data pesanan belum siap.', error: true);
+      return;
+    }
+    final data = doc.data()!;
+
+    Timestamp parseTs(dynamic value) {
+      if (value is Timestamp) return value;
+      if (value is String) {
+        final d = DateTime.tryParse(value);
+        if (d != null) return Timestamp.fromDate(d);
+      }
+      return Timestamp.now();
+    }
+
+    final details = (data['customerDetails'] as Map<String, dynamic>?) ?? {};
+    final order = Order(
+      id: doc.id,
+      date: parseTs(data['date']),
+      createdAt:
+          parseTs(data['createdAt'] ?? data['created_at'] ?? data['date']),
+      customer: (details['name'] as String?) ?? data['customer'] as String?,
+      customerDetails: data['customerDetails'] as Map<String, dynamic>?,
+      products: List<Map<String, dynamic>>.from(data['products'] ?? []),
+      productIds: List<String>.from(data['productIds'] ?? []),
+      subtotal: (data['subtotal'] as num?) ?? 0,
+      total: (data['total'] as num?) ?? 0,
+      totalDiscount: (data['totalDiscount'] as num?) ?? 0,
+      shippingFee: data['shippingFee'] as num?,
+      paymentMethod: data['paymentMethod'] as String? ?? 'N/A',
+      paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
+      status: data['status'] as String? ?? 'N/A',
+      // Pesanan marketplace tak punya kasir; tandai sebagai Marketplace.
+      kasir: data['kasir'] as String? ?? 'Marketplace',
+      source: data['source'] as String?,
+      stockUpdated: data['stockUpdated'] as bool? ?? false,
+      shippingMethod: data['shippingMethod'] as String?,
+    );
+
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PrintPageScreen(order: order)),
+    );
+  }
+
   Future<void> _openTracking(String url) async {
     final uri = Uri.tryParse(url);
     if (uri != null) {
@@ -111,7 +167,16 @@ class _MarketplaceOrderDetailScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Detail Pesanan')),
+      appBar: AppBar(
+        title: const Text('Detail Pesanan'),
+        actions: [
+          IconButton(
+            tooltip: 'Cetak Struk',
+            icon: const Icon(Icons.print),
+            onPressed: _printReceipt,
+          ),
+        ],
+      ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: _ref.snapshots(),
         builder: (context, snapshot) {
@@ -121,6 +186,8 @@ class _MarketplaceOrderDetailScreenState
           if (!snapshot.hasData || !snapshot.data!.exists) {
             return const Center(child: Text('Pesanan tidak ditemukan.'));
           }
+          // Simpan snapshot untuk dipakai tombol Cetak di AppBar.
+          _doc = snapshot.data;
           final data = snapshot.data!.data()!;
           return _buildBody(data);
         },
