@@ -59,6 +59,9 @@ class PurchaseService {
       batch.update(productRef, {
         'stock': FieldValue.increment(item.quantity),
         'purchasePrice': item.purchasePrice,
+        // Waktu produk terakhir dibeli/restock — dipakai untuk mengurutkan
+        // katalog reseller (web) & marketplace (Flutter): produk terbaru di depan.
+        'purchaseAt': FieldValue.serverTimestamp(),
       });
     }
 

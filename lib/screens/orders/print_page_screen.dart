@@ -163,6 +163,15 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
         fontWeight: FontWeight.bold,
         color: Colors.black);
 
+    // Baris kiri-kanan ala struk (sama seperti pratinjau di Pengaturan Struk).
+    Widget line(String left, String right, {bool bold = false}) => Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(left, style: bold ? boldTextStyle : textStyle),
+            Text(right, style: bold ? boldTextStyle : textStyle),
+          ],
+        );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Struk Pembelian'),
@@ -213,7 +222,9 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
                     Text(
                         'Tanggal: ${DateFormat('dd/MM/yy HH:mm').format((widget.order.createdAt ?? widget.order.date).toDate())}',
                         style: textStyle),
-                    Text('Kasir: ${widget.order.kasir}', style: textStyle),
+                    if (widget.order.kasir.isNotEmpty &&
+                        widget.order.kasir != 'N/A')
+                      Text('Kasir: ${widget.order.kasir}', style: textStyle),
                     if (widget.order.customer != null &&
                         widget.order.customer!.isNotEmpty)
                       Text('Customer: ${widget.order.customer!}',
@@ -222,7 +233,7 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
 
                     // --- Product Items ---
                     for (var item in widget.order.products) ...[
-                      Text(item['name'] as String, style: textStyle),
+                      Text('${item['name'] ?? ''}', style: textStyle),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -286,6 +297,16 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
                             style: textStyle),
                       ],
                     ),
+                    // Hanya pesanan marketplace yang punya baris-baris ini.
+                    if ((widget.order.shippingFee ?? 0) > 0)
+                      line('Ongkir',
+                          currencyFormatter.format(widget.order.shippingFee)),
+                    if ((widget.order.adminFee ?? 0) > 0)
+                      line('Biaya Admin',
+                          currencyFormatter.format(widget.order.adminFee)),
+                    if ((widget.order.serviceFee ?? 0) > 0)
+                      line('Biaya Layanan',
+                          currencyFormatter.format(widget.order.serviceFee)),
                     const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,

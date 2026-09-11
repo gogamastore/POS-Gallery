@@ -284,16 +284,18 @@ class _PrintingServiceImpl implements PrintingService {
     final DateTime created = (order.createdAt ?? order.date).toDate();
     bytes.addAll(generator
         .text('Tanggal: ${DateFormat('dd/MM/yy HH:mm').format(created)}'));
-    bytes.addAll(generator.text('Kasir: ${order.kasir}'));
+    if (order.kasir.isNotEmpty && order.kasir != 'N/A') {
+      bytes.addAll(generator.text('Kasir: ${order.kasir}'));
+    }
     if (order.customer != null && order.customer!.isNotEmpty) {
       bytes.addAll(generator.text('Customer: ${order.customer!}'));
     }
     bytes.addAll(generator.hr());
 
     for (var item in order.products) {
-      final itemName = item['name'] as String;
-      final qty = item['quantity'] as int;
-      final price = (item['price'] as num).toDouble();
+      final itemName = item['name']?.toString() ?? '';
+      final qty = (item['quantity'] as num?)?.toInt() ?? 0;
+      final price = (item['price'] as num?)?.toDouble() ?? 0;
       final total = qty * price;
       final originalPrice = (item['originalPrice'] as num?)?.toDouble();
       final hasDiscount = originalPrice != null && originalPrice > price;
@@ -335,6 +337,22 @@ class _PrintingServiceImpl implements PrintingService {
           width: 6,
           styles: const PosStyles(align: PosAlign.right)),
     ]));
+
+    // Hanya pesanan marketplace yang punya baris-baris ini.
+    void feeRow(String label, num? value) {
+      if ((value ?? 0) <= 0) return;
+      bytes.addAll(generator.row([
+        PosColumn(text: label, width: 6),
+        PosColumn(
+            text: currencyFormatter.format(value),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right)),
+      ]));
+    }
+
+    feeRow('Ongkir', order.shippingFee);
+    feeRow('Biaya Admin', order.adminFee);
+    feeRow('Biaya Layanan', order.serviceFee);
 
     bytes.addAll(generator.row([
       PosColumn(text: 'Total', width: 6, styles: const PosStyles(bold: true)),

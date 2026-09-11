@@ -389,7 +389,10 @@ export const createBiteshipOrder = onCall(
         courier_company: order.biteshipCourierCode,
         courier_type: order.biteshipServiceCode,
         courier_insurance: 0,
-        delivery_type: isInstant ? "now" : "scheduled",
+        // "now" untuk semua kurir: kurir reguler (JNE, AnterAja, dll) tidak
+        // mendukung "scheduled" tanpa delivery_date/time → error 40002007
+        // "Courier is not available for scheduled delivery".
+        delivery_type: "now",
         order_note: `Order #${orderId} dari Gogama Store`,
         metadata: { orderId },
         items: (order.products as any[]).map((p: any) => ({
@@ -465,6 +468,12 @@ export const createBiteshipOrder = onCall(
         biteshipCourierTrackingId: courierTrackingId,
         deliveryTrackingUrl: trackingUrl,
         status: "shipped",
+        // Waktu pesanan DIPROSES admin (klik "Proses Pesanan"). Dipakai
+        // laporan penjualan agar pesanan terhitung pada hari diproses, bukan
+        // pada tanggal pembeli membuatnya. Ditulis atomik bersama status
+        // "shipped"; guard "Cegah double booking" di atas memastikan ini
+        // hanya terset sekali (klik ulang langsung return).
+        validatedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
 

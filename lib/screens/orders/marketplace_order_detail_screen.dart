@@ -1,13 +1,14 @@
-// `Order` disembunyikan agar tidak bentrok dengan model Order aplikasi.
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:ionicons/ionicons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/order.dart';
 import '../../services/biteship_service.dart';
 import '../../services/marketplace_order_actions.dart';
+import '../../services/order_service.dart';
 import '../../widgets/marketplace_order_badges.dart';
 import 'marketplace_order_validation_screen.dart';
 import 'print_page_screen.dart';
@@ -30,10 +31,6 @@ class _MarketplaceOrderDetailScreenState
       NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
   bool _processing = false;
 
-  // Snapshot terakhir pesanan, dipakai tombol Cetak di AppBar untuk membangun
-  // Order lalu membuka halaman struk.
-  DocumentSnapshot<Map<String, dynamic>>? _doc;
-
   DocumentReference<Map<String, dynamic>> get _ref =>
       FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
 
@@ -48,6 +45,10 @@ class _MarketplaceOrderDetailScreenState
   Future<void> _ship() async {
     setState(() => _processing = true);
     try {
+      // Kunci modal (purchasePrice) tiap produk saat pesanan diproses untuk
+      // dikirim → laporan penjualan pakai modal ini, akurat & tak berubah oleh
+      // restok. Idempoten: bila sudah punya snapshot, tidak menimpa.
+      await OrderService().snapshotPurchasePrices(widget.orderId);
       final res = await _biteship.createOrder(widget.orderId);
       if (!mounted) return;
       _snack(res.waybillId?.isNotEmpty == true
@@ -91,55 +92,6 @@ class _MarketplaceOrderDetailScreenState
     }
   }
 
-  /// Bangun Order dari dokumen pesanan lalu buka halaman struk untuk dicetak.
-  /// Tanggal diparse defensif karena pesanan marketplace bisa menyimpan `date`
-  /// sebagai Timestamp maupun String ISO.
-  void _printReceipt() {
-    final doc = _doc;
-    if (doc == null || !doc.exists) {
-      _snack('Data pesanan belum siap.', error: true);
-      return;
-    }
-    final data = doc.data()!;
-
-    Timestamp parseTs(dynamic value) {
-      if (value is Timestamp) return value;
-      if (value is String) {
-        final d = DateTime.tryParse(value);
-        if (d != null) return Timestamp.fromDate(d);
-      }
-      return Timestamp.now();
-    }
-
-    final details = (data['customerDetails'] as Map<String, dynamic>?) ?? {};
-    final order = Order(
-      id: doc.id,
-      date: parseTs(data['date']),
-      createdAt:
-          parseTs(data['createdAt'] ?? data['created_at'] ?? data['date']),
-      customer: (details['name'] as String?) ?? data['customer'] as String?,
-      customerDetails: data['customerDetails'] as Map<String, dynamic>?,
-      products: List<Map<String, dynamic>>.from(data['products'] ?? []),
-      productIds: List<String>.from(data['productIds'] ?? []),
-      subtotal: (data['subtotal'] as num?) ?? 0,
-      total: (data['total'] as num?) ?? 0,
-      totalDiscount: (data['totalDiscount'] as num?) ?? 0,
-      shippingFee: data['shippingFee'] as num?,
-      paymentMethod: data['paymentMethod'] as String? ?? 'N/A',
-      paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
-      status: data['status'] as String? ?? 'N/A',
-      // Pesanan marketplace tak punya kasir; tandai sebagai Marketplace.
-      kasir: data['kasir'] as String? ?? 'Marketplace',
-      source: data['source'] as String?,
-      stockUpdated: data['stockUpdated'] as bool? ?? false,
-      shippingMethod: data['shippingMethod'] as String?,
-    );
-
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PrintPageScreen(order: order)),
-    );
-  }
-
   Future<void> _openTracking(String url) async {
     final uri = Uri.tryParse(url);
     if (uri != null) {
@@ -164,34 +116,43 @@ class _MarketplaceOrderDetailScreenState
     ));
   }
 
+  /// Cetak struk — memakai layar & template yang sama dengan pesanan POS,
+  /// termasuk identitas toko dari Pengaturan Struk.
+  void _print(Map<String, dynamic> data) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) =>
+          PrintPageScreen(order: Order.fromMap(widget.orderId, data)),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detail Pesanan'),
-        actions: [
-          IconButton(
-            tooltip: 'Cetak Struk',
-            icon: const Icon(Icons.print),
-            onPressed: _printReceipt,
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _ref.snapshots(),
+      builder: (context, snapshot) {
+        final waiting = snapshot.connectionState == ConnectionState.waiting;
+        final data = !waiting && snapshot.hasData && snapshot.data!.exists
+            ? snapshot.data!.data()!
+            : null;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Detail Pesanan'),
+            actions: [
+              if (data != null)
+                IconButton(
+                  icon: const Icon(Ionicons.print_outline),
+                  tooltip: 'Cetak Struk',
+                  onPressed: () => _print(data),
+                ),
+            ],
           ),
-        ],
-      ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: _ref.snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('Pesanan tidak ditemukan.'));
-          }
-          // Simpan snapshot untuk dipakai tombol Cetak di AppBar.
-          _doc = snapshot.data;
-          final data = snapshot.data!.data()!;
-          return _buildBody(data);
-        },
-      ),
+          body: waiting
+              ? const Center(child: CircularProgressIndicator())
+              : data == null
+                  ? const Center(child: Text('Pesanan tidak ditemukan.'))
+                  : _buildBody(data),
+        );
+      },
     );
   }
 
@@ -216,6 +177,10 @@ class _MarketplaceOrderDetailScreenState
     final subtotal = (data['subtotal'] as num?)?.toDouble() ?? 0;
     final shippingFee = (data['shippingFee'] as num?)?.toDouble() ?? 0;
     final total = (data['total'] as num?)?.toDouble() ?? 0;
+    final voucherDiscount = (data['voucherDiscount'] as num?)?.toDouble() ?? 0;
+    final voucherCode = data['voucherCode'] as String?;
+    final adminFee = (data['adminFee'] as num?)?.toDouble() ?? 0;
+    final serviceFee = (data['serviceFee'] as num?)?.toDouble() ?? 0;
     final date = data['date'];
     final dateText = date is Timestamp
         ? DateFormat('dd MMMM yyyy, HH:mm', 'id_ID').format(date.toDate())
@@ -278,6 +243,16 @@ class _MarketplaceOrderDetailScreenState
               _card('Ringkasan', [
                 _row('Subtotal', _currency.format(subtotal)),
                 _row('Ongkir', _currency.format(shippingFee)),
+                if (voucherDiscount > 0)
+                  _row(
+                    'Voucher${voucherCode != null ? ' ($voucherCode)' : ''}',
+                    '- ${_currency.format(voucherDiscount)}',
+                    valueColor: Colors.green,
+                  ),
+                if (adminFee > 0)
+                  _row('Biaya Admin', _currency.format(adminFee)),
+                if (serviceFee > 0)
+                  _row('Biaya Layanan', _currency.format(serviceFee)),
                 _row('Berat Total Pesanan', '$totalWeightGram gram'),
                 _row('Total', _currency.format(total), bold: true),
               ]),
@@ -446,7 +421,7 @@ class _MarketplaceOrderDetailScreenState
         ),
       );
 
-  Widget _row(String label, String value, {bool bold = false}) => Padding(
+  Widget _row(String label, String value, {bool bold = false, Color? valueColor}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -458,6 +433,7 @@ class _MarketplaceOrderDetailScreenState
             Expanded(
               child: Text(value,
                   style: TextStyle(
+                      color: valueColor,
                       fontWeight: bold ? FontWeight.bold : FontWeight.normal,
                       fontSize: bold ? 15 : 13)),
             ),

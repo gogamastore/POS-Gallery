@@ -208,8 +208,8 @@ class OrderService {
       }
 
       // Prepare and apply order update
-      final updateData =
-          _prepareUpdateData(newProducts, newSubtotal, newTotal, validatorName);
+      final updateData = _prepareUpdateData(
+          newProducts, oldOrder.products, newSubtotal, newTotal, validatorName);
       transaction.update(orderRef, updateData);
     });
   }
@@ -237,9 +237,29 @@ class OrderService {
   }
 
   /// Helper to prepare the data map for an order update.
-  Map<String, dynamic> _prepareUpdateData(List<OrderItem> newProducts,
-      double newSubtotal, double newTotal, String? validatorName) {
-    final newProductsAsJson = newProducts.map((p) => p.toJson()).toList();
+  Map<String, dynamic> _prepareUpdateData(
+      List<OrderItem> newProducts,
+      List<Map<String, dynamic>> oldProducts,
+      double newSubtotal,
+      double newTotal,
+      String? validatorName) {
+    // Lestarikan snapshot modal saat edit: bawa `purchasePrice` lama per
+    // produk agar tidak hilang ketika array `products` ditulis ulang
+    // (OrderItem tak punya field purchasePrice). Produk yang benar-benar baru
+    // ditambah tak dapat snapshot di sini — nanti diisi current-cost oleh
+    // snapshotPurchasePrices / fallback modal terkini di laporan.
+    final Map<String, dynamic> oldPurchasePrices = {
+      for (final p in oldProducts)
+        if (p['productId'] != null && p['purchasePrice'] != null)
+          p['productId'] as String: p['purchasePrice']
+    };
+    final newProductsAsJson = newProducts.map((p) {
+      final json = p.toJson();
+      if (oldPurchasePrices.containsKey(p.productId)) {
+        json['purchasePrice'] = oldPurchasePrices[p.productId];
+      }
+      return json;
+    }).toList();
     final Map<String, dynamic> data = {
       'products': newProductsAsJson,
       'productIds': newProducts.map((p) => p.productId).toList(),
@@ -259,5 +279,58 @@ class OrderService {
       'kasir': validatorName,
       'validatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Snapshot modal (purchasePrice) ke pesanan: isi `products[].purchasePrice`
+  /// yang BELUM ada dengan modal terkini produk, tanpa mengubah field lain
+  /// (status/validatedAt tak disentuh). Idempoten — snapshot lama tetap.
+  ///
+  /// Dipakai saat validasi & proses kirim marketplace agar laporan penjualan
+  /// punya modal saat penjualan (tak berubah oleh restok). Modal diambil via
+  /// `whereIn` chunk 30 (aman untuk cap 160 item unik), dokumen jauh < 1 MiB.
+  Future<void> snapshotPurchasePrices(String orderId) async {
+    final ref = _firestore.collection('orders').doc(orderId);
+    final snap = await ref.get();
+    if (!snap.exists) return;
+
+    final rawProducts = (snap.data()?['products'] as List<dynamic>?) ?? [];
+    // Hanya produk yang belum punya purchasePrice.
+    final missingIds = rawProducts
+        .whereType<Map>()
+        .where((p) => p['purchasePrice'] == null)
+        .map((p) => p['productId'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (missingIds.isEmpty) return;
+
+    final Map<String, double> costs = {};
+    const chunkSize = 30;
+    for (var i = 0; i < missingIds.length; i += chunkSize) {
+      final chunk = missingIds.sublist(i,
+          i + chunkSize > missingIds.length ? missingIds.length : i + chunkSize);
+      if (chunk.isEmpty) continue;
+      final qs = await _firestore
+          .collection('products')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      for (final d in qs.docs) {
+        costs[d.id] = (d.data()['purchasePrice'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+
+    final newProducts = rawProducts.map((p) {
+      if (p is Map && p['purchasePrice'] == null) {
+        final m = Map<String, dynamic>.from(p);
+        final pid = m['productId'] as String?;
+        if (pid != null && costs.containsKey(pid)) {
+          m['purchasePrice'] = costs[pid];
+        }
+        return m;
+      }
+      return p;
+    }).toList();
+
+    await ref.update({'products': newProducts});
   }
 }

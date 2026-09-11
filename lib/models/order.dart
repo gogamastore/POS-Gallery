@@ -25,6 +25,10 @@ class Order {
   final num totalDiscount;
   final num? shippingFee;
 
+  // Biaya tambahan pesanan marketplace (null/0 pada pesanan POS).
+  final num? adminFee;
+  final num? serviceFee;
+
   // Payment Info
   final String paymentMethod;
   final String paymentStatus;
@@ -57,6 +61,8 @@ class Order {
     required this.total,
     required this.totalDiscount,
     this.shippingFee,
+    this.adminFee,
+    this.serviceFee,
     required this.paymentMethod,
     required this.paymentStatus,
     required this.status,
@@ -69,9 +75,14 @@ class Order {
     this.grossProfit = 0.0,
   });
 
-  factory Order.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data()!;
+  factory Order.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) =>
+      Order.fromMap(doc.id, doc.data()!);
 
+  /// Map mentah dokumen `orders/{id}` -> [Order]. Dipakai juga oleh layar
+  /// marketplace yang membaca dokumennya lewat StreamBuilder. Pesanan
+  /// marketplace ditulis checkout web/app pembeli, jadi sebagian field POS
+  /// bisa absen — semua pembacaan dibuat toleran.
+  factory Order.fromMap(String id, Map<String, dynamic> data) {
     // PERBAIKAN: Menghilangkan underscore dari nama fungsi lokal
     Timestamp? parseTimestamp(dynamic value) {
       if (value is Timestamp) return value;
@@ -79,22 +90,31 @@ class Order {
       return null;
     }
 
+    final details = data['customerDetails'] as Map<String, dynamic>?;
+
     return Order(
-      id: doc.id,
-      date: data['date'] as Timestamp,
+      id: id,
+      // Marketplace kadang hanya punya `createdAt`; jangan sampai gagal parse.
+      date: parseTimestamp(data['date']) ??
+          parseTimestamp(data['createdAt']) ??
+          Timestamp.now(),
       createdAt: parseTimestamp(data['created_at']), // Menggunakan fungsi yang sudah diganti nama
       updatedAt: data['updatedAt'] as Timestamp?,
       validatedAt: data['validatedAt'] as Timestamp?,
       shippedAt: data['shippedAt'] as Timestamp?,
-      customer: data['customer'] as String?,
+      customer: data['customer'] as String? ?? details?['name'] as String?,
       customerId: data['customerId'] as String?,
-      customerDetails: data['customerDetails'] as Map<String, dynamic>?,
+      customerDetails: details,
       products: List<Map<String, dynamic>>.from(data['products'] ?? []),
       productIds: List<String>.from(data['productIds'] ?? []),
       subtotal: data['subtotal'] as num? ?? 0,
       total: data['total'] as num? ?? 0,
-      totalDiscount: data['totalDiscount'] as num? ?? 0,
+      // Marketplace menulis potongannya sebagai `voucherDiscount`.
+      totalDiscount:
+          data['totalDiscount'] as num? ?? data['voucherDiscount'] as num? ?? 0,
       shippingFee: data['shippingFee'] as num?,
+      adminFee: data['adminFee'] as num?,
+      serviceFee: data['serviceFee'] as num?,
       paymentMethod: data['paymentMethod'] as String? ?? 'N/A',
       paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
       status: data['status'] as String? ?? 'N/A',
@@ -128,6 +148,8 @@ class Order {
       total: total,
       totalDiscount: totalDiscount,
       shippingFee: shippingFee,
+      adminFee: adminFee,
+      serviceFee: serviceFee,
       paymentMethod: paymentMethod,
       paymentStatus: paymentStatus,
       status: status,

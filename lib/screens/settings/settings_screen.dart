@@ -7,9 +7,11 @@ import 'promo_screen.dart';
 import 'staff_management_screen.dart';
 import 'supplier_management_screen.dart';
 import 'trending_products_screen.dart';
-import '../ai/ai_stock_suggestion_screen.dart';
+import 'popup_notification_screen.dart';
+import 'voucher_management_screen.dart';
+import 'admin_fees_screen.dart';
+import 'receipt_settings_screen.dart'; // PENAMBAHAN: Impor halaman pengaturan struk
 import 'printer_settings_screen.dart'; // PENAMBAHAN: Impor halaman pengaturan printer
-import 'receipt_settings_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -44,21 +46,14 @@ class SettingsScreen extends StatelessWidget {
             subtitle: 'Atur printer utama untuk struk', // PENAMBAHAN: Subtitle baru
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PrinterSettingsScreen())), // PENAMBAHAN: Navigasi baru
           ),
-          _buildMenuItem(
-            context,
-            icon: Ionicons.receipt_outline,
-            title: 'Pengaturan Struk',
-            subtitle: 'Atur nama toko, alamat, telepon, dan catatan footer',
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ReceiptSettingsScreen())),
-          ),
           const Divider(), // Pemisah visual
           // --- MENU AI DITAMBAHKAN DI SINI ---
           _buildMenuItem(
             context,
-            icon: Icons.auto_awesome, // Ikon AI
-            title: 'Saran Stok (AI)',
-            subtitle: 'Dapatkan rekomendasi stok menggunakan AI',
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AiStockSuggestionScreen())),
+            icon: Icons.receipt_long_outlined, // Ikon AI
+            title: 'Pengaturan Struk',
+            subtitle: 'Atur Nama Toko, Alamat, dan Kontak di Struk',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ReceiptSettingsScreen())),
           ),
           // ------------------------------------
           _buildMenuItem(
@@ -89,6 +84,27 @@ class SettingsScreen extends StatelessWidget {
             title: 'Produk Trending',
             subtitle: 'Tentukan produk yang akan ditampilkan sebagai trending',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TrendingProductsScreen())),
+          ),
+          _buildMenuItem(
+            context,
+            icon: Icons.notifications_active_outlined,
+            title: 'Notifikasi',
+            subtitle: 'Pesan/iklan yang muncul di halaman reseller saat membuka aplikasi',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PopupNotificationScreen())),
+          ),
+          _buildMenuItem(
+            context,
+            icon: Icons.confirmation_number_outlined,
+            title: 'Voucher Diskon',
+            subtitle: 'Kelola voucher belanja untuk halaman checkout reseller',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const VoucherManagementScreen())),
+          ),
+          _buildMenuItem(
+            context,
+            icon: Icons.receipt_long_outlined,
+            title: 'Biaya Admin',
+            subtitle: 'Atur biaya admin (flat) & biaya layanan (persen + batas)',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminFeesScreen())),
           ),
         ],
       ),

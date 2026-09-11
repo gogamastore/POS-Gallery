@@ -11,6 +11,7 @@
 #    powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1
 #  Opsi:
 #    -SkipBuild   : lewati "flutter build" (pakai folder Release yang sudah ada)
+#    powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1 -SkipBuild
 # ============================================================================
 param(
     [switch]$SkipBuild

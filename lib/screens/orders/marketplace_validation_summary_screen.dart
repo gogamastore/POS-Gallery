@@ -47,9 +47,17 @@ class _MarketplaceValidationSummaryScreenState
   bool get _isPaid => ['paid', 'settlement', 'lunas']
       .contains(widget.paymentStatus.toLowerCase());
 
+  // Voucher & biaya dari dokumen order ASLI — dipertahankan saat validasi agar
+  // total tetap konsisten (tidak menghapus potongan/biaya dari pesanan pembeli).
+  double _voucherDiscount = 0;
+  String? _voucherCode;
+  double _adminFee = 0;
+  double _serviceFee = 0;
+
   double get _subtotal => widget.validatedItems
       .fold(0.0, (total, i) => total + i.price * i.quantity);
-  double get _total => _subtotal + widget.shippingFee;
+  double get _total =>
+      _subtotal + widget.shippingFee - _voucherDiscount + _adminFee + _serviceFee;
 
   @override
   void initState() {
@@ -59,6 +67,29 @@ class _MarketplaceValidationSummaryScreenState
         text: user?.displayName?.isNotEmpty == true
             ? user!.displayName!
             : (user?.email ?? ''));
+    _loadOrderExtras();
+  }
+
+  /// Ambil voucher & biaya dari dokumen order asli agar tetap disertakan di
+  /// total & ringkasan validasi.
+  Future<void> _loadOrderExtras() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(widget.orderId)
+          .get();
+      final d = snap.data();
+      if (d != null && mounted) {
+        setState(() {
+          _voucherDiscount = (d['voucherDiscount'] as num?)?.toDouble() ?? 0;
+          _voucherCode = d['voucherCode'] as String?;
+          _adminFee = (d['adminFee'] as num?)?.toDouble() ?? 0;
+          _serviceFee = (d['serviceFee'] as num?)?.toDouble() ?? 0;
+        });
+      }
+    } catch (_) {
+      // diamkan — biaya/voucher opsional
+    }
   }
 
   @override
@@ -108,6 +139,10 @@ class _MarketplaceValidationSummaryScreenState
           .collection('orders')
           .doc(widget.orderId)
           .update(extra);
+
+      // 4. Kunci modal (purchasePrice) tiap produk saat validasi → laporan
+      //    penjualan pakai modal ini, akurat & tak berubah oleh restok.
+      await _orderService.snapshotPurchasePrices(widget.orderId);
 
       messenger.showSnackBar(const SnackBar(
         content: Text('Pesanan berhasil divalidasi & diselesaikan.'),
@@ -164,6 +199,14 @@ class _MarketplaceValidationSummaryScreenState
                 const Divider(),
                 _totalRow('Subtotal', _subtotal),
                 _totalRow('Ongkir', widget.shippingFee),
+                if (_voucherDiscount > 0)
+                  _totalRow(
+                    'Voucher${_voucherCode != null ? ' ($_voucherCode)' : ''}',
+                    -_voucherDiscount,
+                    valueColor: Colors.green,
+                  ),
+                if (_adminFee > 0) _totalRow('Biaya Admin', _adminFee),
+                if (_serviceFee > 0) _totalRow('Biaya Layanan', _serviceFee),
                 _totalRow('Total', _total, bold: true),
 
                 // Metode pembayaran — hanya bila pesanan BELUM lunas
@@ -231,7 +274,9 @@ class _MarketplaceValidationSummaryScreenState
     );
   }
 
-  Widget _totalRow(String label, double value, {bool bold = false}) => Padding(
+  Widget _totalRow(String label, double value,
+          {bool bold = false, Color? valueColor}) =>
+      Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -242,6 +287,7 @@ class _MarketplaceValidationSummaryScreenState
                     fontSize: bold ? 16 : 14)),
             Text(_currency.format(value),
                 style: TextStyle(
+                    color: valueColor,
                     fontWeight: bold ? FontWeight.bold : FontWeight.normal,
                     fontSize: bold ? 16 : 14)),
           ],
