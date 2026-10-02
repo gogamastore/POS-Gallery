@@ -492,9 +492,9 @@ exports.biteshipWebhook = (0, https_1.onRequest)({ region: "asia-southeast1", se
         return;
     }
     try {
-        const event = req.body;
-        v2_1.logger.info("Biteship webhook:", event.event, "| Order:", event.order?.id);
-        const biteshipOrderId = event.order?.id;
+        const event = req.body ?? {};
+        const { orderId: biteshipOrderId, status, waybillId, trackingId } = parseBiteshipEvent(event);
+        v2_1.logger.info("Biteship webhook:", event.event, "| Order:", biteshipOrderId);
         if (!biteshipOrderId) {
             res.status(200).json({ received: true });
             return;
@@ -510,24 +510,23 @@ exports.biteshipWebhook = (0, https_1.onRequest)({ region: "asia-southeast1", se
             return;
         }
         const orderDoc = orderQuery.docs[0];
-        const newOrderStatus = mapBiteshipStatus(event.order?.status);
-        // Resi ada di courier.waybill_id
-        const waybillId = (event.order?.courier?.waybill_id ?? event.order?.waybill_id);
+        const newOrderStatus = mapBiteshipStatus(status);
         const updateData = {
-            biteshipStatus: event.order?.status,
             updatedAt: firestore_1.FieldValue.serverTimestamp(),
         };
+        // order.price / order.waybill_id tidak membawa status → jangan tulis undefined.
+        if (status)
+            updateData.biteshipStatus = status;
         if (newOrderStatus)
             updateData.status = newOrderStatus;
         if (waybillId)
             updateData.waybillId = waybillId;
-        if (event.order?.courier?.tracking_id) {
-            const tid = event.order.courier.tracking_id;
-            updateData.biteshipCourierTrackingId = tid;
-            updateData.deliveryTrackingUrl = `https://track.biteship.com/${tid}`;
+        if (trackingId) {
+            updateData.biteshipCourierTrackingId = trackingId;
+            updateData.deliveryTrackingUrl = `https://track.biteship.com/${trackingId}`;
         }
         await orderDoc.ref.update(updateData);
-        v2_1.logger.info(`Webhook OK: ${biteshipOrderId} → ${event.order?.status} → ${newOrderStatus}`);
+        v2_1.logger.info(`Webhook OK: ${biteshipOrderId} → ${status} → ${newOrderStatus}`);
         res.status(200).json({ received: true });
     }
     catch (err) {
@@ -536,13 +535,29 @@ exports.biteshipWebhook = (0, https_1.onRequest)({ region: "asia-southeast1", se
     }
 });
 // ─── Helpers ──────────────────────────────────────────────────────
+/**
+ * Normalisasi payload webhook Biteship. Event sungguhan berformat datar
+ * (`order_id`, `status`, `courier_waybill_id`, `courier_tracking_id`);
+ * format bersarang (`order.id`, `order.courier.*`) tetap didukung.
+ */
+function parseBiteshipEvent(event) {
+    const str = (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+    const o = event?.order ?? {};
+    return {
+        orderId: str(event?.order_id) ?? str(o.id),
+        status: str(event?.status) ?? str(o.status),
+        waybillId: str(event?.courier_waybill_id) ?? str(o.courier?.waybill_id) ?? str(o.waybill_id),
+        trackingId: str(event?.courier_tracking_id) ?? str(o.courier?.tracking_id),
+    };
+}
 function mapBiteshipStatus(s) {
     if (!s)
         return null;
     const lower = s.toLowerCase();
-    if (lower.includes("allocating") || lower.includes("waiting_pickup"))
+    // Nama status Biteship: allocated, picking_up, picked, dropping_off, delivered, ...
+    if (lower.includes("allocat") || lower.includes("waiting_pickup") || lower.includes("picking_up"))
         return "processing";
-    if (lower.includes("picked_up") || lower.includes("on_process") || lower.includes("in_transit"))
+    if (lower.includes("picked") || lower.includes("dropping_off") || lower.includes("on_process") || lower.includes("in_transit"))
         return "shipped";
     if (lower.includes("delivered"))
         return "delivered";

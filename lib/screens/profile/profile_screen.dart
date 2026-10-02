@@ -11,7 +11,7 @@ import 'security_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../models/user_model.dart';
 import '../../screens/orders/orders_screen.dart';
-import '../ai/ai_stock_suggestion_screen.dart';
+import '../chat/admin_chat_list_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -118,12 +118,12 @@ class ProfileScreen extends ConsumerWidget {
                          const Divider(height: 1),
                         _buildProfileMenuItem(
                           context,
-                          icon: Ionicons.sparkles_outline,
-                          title: 'AI Manafidh',
+                          icon: Ionicons.chatbubble_ellipses_outline,
+                          title: 'Chat',
                           onTap: () {
                             Navigator.of(context).push(MaterialPageRoute(
                                 builder: (context) =>
-                                    const AiStockSuggestionScreen()));
+                                    const AdminChatListScreen()));
                           },
                         ),
                         const Divider(height: 1),

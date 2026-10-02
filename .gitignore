@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Node / Firebase Functions
+node_modules/
+
+# Gradle cache & build output (termasuk plugin lokal)
+**/.gradle/
+**/android/build/
+
+# Hasil build installer (APK/EXE) - simpan di Releases/Drive, bukan di git
+installer/output/

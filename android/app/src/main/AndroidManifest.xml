@@ -32,7 +32,7 @@
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <application
-        android:label="Manafidh Store"
+        android:label="Manafidh Office"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity
@@ -95,6 +95,10 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

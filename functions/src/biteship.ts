@@ -389,10 +389,7 @@ export const createBiteshipOrder = onCall(
         courier_company: order.biteshipCourierCode,
         courier_type: order.biteshipServiceCode,
         courier_insurance: 0,
-        // "now" untuk semua kurir: kurir reguler (JNE, AnterAja, dll) tidak
-        // mendukung "scheduled" tanpa delivery_date/time → error 40002007
-        // "Courier is not available for scheduled delivery".
-        delivery_type: "now",
+        delivery_type: isInstant ? "now" : "scheduled",
         order_note: `Order #${orderId} dari Gogama Store`,
         metadata: { orderId },
         items: (order.products as any[]).map((p: any) => ({
@@ -468,12 +465,6 @@ export const createBiteshipOrder = onCall(
         biteshipCourierTrackingId: courierTrackingId,
         deliveryTrackingUrl: trackingUrl,
         status: "shipped",
-        // Waktu pesanan DIPROSES admin (klik "Proses Pesanan"). Dipakai
-        // laporan penjualan agar pesanan terhitung pada hari diproses, bukan
-        // pada tanggal pembeli membuatnya. Ditulis atomik bersama status
-        // "shipped"; guard "Cegah double booking" di atas memastikan ini
-        // hanya terset sekali (klik ulang langsung return).
-        validatedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
 
@@ -600,10 +591,10 @@ export const biteshipWebhook = onRequest(
     }
 
     try {
-      const event = req.body;
-      logger.info("Biteship webhook:", event.event, "| Order:", event.order?.id);
+      const event = req.body ?? {};
+      const { orderId: biteshipOrderId, status, waybillId, trackingId } = parseBiteshipEvent(event);
+      logger.info("Biteship webhook:", event.event, "| Order:", biteshipOrderId);
 
-      const biteshipOrderId = event.order?.id as string | undefined;
       if (!biteshipOrderId) {
         res.status(200).json({ received: true });
         return;
@@ -622,26 +613,24 @@ export const biteshipWebhook = onRequest(
       }
 
       const orderDoc = orderQuery.docs[0];
-      const newOrderStatus = mapBiteshipStatus(event.order?.status);
-      // Resi ada di courier.waybill_id
-      const waybillId = (event.order?.courier?.waybill_id ?? event.order?.waybill_id) as string | undefined;
+      const newOrderStatus = mapBiteshipStatus(status);
 
       const updateData: Record<string, any> = {
-        biteshipStatus: event.order?.status,
         updatedAt: FieldValue.serverTimestamp(),
       };
 
+      // order.price / order.waybill_id tidak membawa status → jangan tulis undefined.
+      if (status) updateData.biteshipStatus = status;
       if (newOrderStatus) updateData.status = newOrderStatus;
       if (waybillId) updateData.waybillId = waybillId;
-      if (event.order?.courier?.tracking_id) {
-        const tid = event.order.courier.tracking_id as string;
-        updateData.biteshipCourierTrackingId = tid;
-        updateData.deliveryTrackingUrl = `https://track.biteship.com/${tid}`;
+      if (trackingId) {
+        updateData.biteshipCourierTrackingId = trackingId;
+        updateData.deliveryTrackingUrl = `https://track.biteship.com/${trackingId}`;
       }
 
       await orderDoc.ref.update(updateData);
 
-      logger.info(`Webhook OK: ${biteshipOrderId} → ${event.order?.status} → ${newOrderStatus}`);
+      logger.info(`Webhook OK: ${biteshipOrderId} → ${status} → ${newOrderStatus}`);
       res.status(200).json({ received: true });
     } catch (err: any) {
       logger.error("biteshipWebhook error:", err);
@@ -651,11 +640,31 @@ export const biteshipWebhook = onRequest(
 );
 
 // ─── Helpers ──────────────────────────────────────────────────────
+
+/**
+ * Normalisasi payload webhook Biteship. Event sungguhan berformat datar
+ * (`order_id`, `status`, `courier_waybill_id`, `courier_tracking_id`);
+ * format bersarang (`order.id`, `order.courier.*`) tetap didukung.
+ */
+function parseBiteshipEvent(event: any): {
+  orderId?: string; status?: string; waybillId?: string; trackingId?: string;
+} {
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  const o = event?.order ?? {};
+  return {
+    orderId: str(event?.order_id) ?? str(o.id),
+    status: str(event?.status) ?? str(o.status),
+    waybillId: str(event?.courier_waybill_id) ?? str(o.courier?.waybill_id) ?? str(o.waybill_id),
+    trackingId: str(event?.courier_tracking_id) ?? str(o.courier?.tracking_id),
+  };
+}
+
 function mapBiteshipStatus(s?: string): string | null {
   if (!s) return null;
   const lower = s.toLowerCase();
-  if (lower.includes("allocating") || lower.includes("waiting_pickup")) return "processing";
-  if (lower.includes("picked_up") || lower.includes("on_process") || lower.includes("in_transit")) return "shipped";
+  // Nama status Biteship: allocated, picking_up, picked, dropping_off, delivered, ...
+  if (lower.includes("allocat") || lower.includes("waiting_pickup") || lower.includes("picking_up")) return "processing";
+  if (lower.includes("picked") || lower.includes("dropping_off") || lower.includes("on_process") || lower.includes("in_transit")) return "shipped";
   if (lower.includes("delivered")) return "delivered";
   if (lower.includes("cancelled") || lower.includes("failed") || lower.includes("returned")) return "cancelled";
   return null;

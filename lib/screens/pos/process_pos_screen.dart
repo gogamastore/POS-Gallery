@@ -5,12 +5,15 @@ import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
 
 import '../../models/customer.dart';
+import '../../models/pos_cart_item.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/customer_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../services/midtrans_service.dart';
 import '../../services/pos_service.dart';
 import '../orders/print_page_screen.dart'; // Import PrintPageScreen
 import '../../models/order.dart' as models;
+import 'midtrans_payment_screen.dart';
 
 class ProcessPosScreen extends ConsumerStatefulWidget {
   const ProcessPosScreen({super.key});
@@ -109,6 +112,16 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
       return;
     }
 
+    if (_paymentMethod == 'midtrans') {
+      await _processMidtransPayment(
+        cartItems: cartItems,
+        totalAmount: totalAmount,
+        totalDiscount: totalDiscount,
+        kasirName: kasirName,
+      );
+      return;
+    }
+
     setState(() => _isProcessing = true);
 
     try {
@@ -163,6 +176,64 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         });
       }
     }
+  }
+
+  /// Pembayaran online via Midtrans: pesanan dibuat 'pending' (stok belum
+  /// dikurangi), lalu halaman pembayaran menunggu webhook menuntaskannya.
+  /// Keranjang baru dikosongkan setelah pembayaran diterima.
+  Future<void> _processMidtransPayment({
+    required List<PosCartItem> cartItems,
+    required double totalAmount,
+    required double totalDiscount,
+    required String kasirName,
+  }) async {
+    if (totalAmount < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Total harus lebih dari Rp 0 untuk pembayaran Midtrans.')));
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+
+    final posService = PosService();
+    String? orderId;
+    String? redirectUrl;
+    try {
+      orderId = await posService.createPendingMidtransOrder(
+        items: cartItems,
+        totalAmount: totalAmount,
+        totalDiscount: totalDiscount,
+        kasir: kasirName,
+        customer: _selectedCustomer,
+      );
+      redirectUrl = await MidtransService().createSnapTransaction(orderId);
+    } catch (e) {
+      // Pesanan sudah dibuat tetapi transaksi Midtrans gagal → batalkan agar
+      // tidak tertinggal sebagai pesanan 'pending'.
+      if (orderId != null) {
+        try {
+          await posService.cancelPendingMidtransOrder(orderId);
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal membuat pembayaran Midtrans: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => MidtransPaymentScreen(
+          orderId: orderId!,
+          redirectUrl: redirectUrl!,
+          totalAmount: totalAmount,
+        ),
+      ),
+    );
   }
 
   @override
@@ -280,6 +351,16 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
                 });
               },
               child: const Text('QRIS'),
+            ),
+            RadioMenuButton<String>(
+              value: 'midtrans',
+              groupValue: _paymentMethod,
+              onChanged: (String? value) {
+                setState(() {
+                  _paymentMethod = value!;
+                });
+              },
+              child: const Text('Midtrans (QRIS / VA / E-Wallet)'),
             ),
           ],
         ),

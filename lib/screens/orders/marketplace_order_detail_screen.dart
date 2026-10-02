@@ -1,17 +1,16 @@
-import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:ionicons/ionicons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../models/order.dart';
+import '../../services/admin_chat_service.dart';
 import '../../services/biteship_service.dart';
 import '../../services/marketplace_order_actions.dart';
 import '../../services/order_service.dart';
 import '../../widgets/marketplace_order_badges.dart';
+import '../chat/admin_chat_screen.dart';
 import 'marketplace_order_validation_screen.dart';
-import 'print_page_screen.dart';
 
 /// Detail pesanan marketplace — cerminan halaman web `dashboard/orders/[id]`.
 /// Real-time: mendengarkan dokumen `orders/{id}`.
@@ -27,6 +26,7 @@ class MarketplaceOrderDetailScreen extends StatefulWidget {
 class _MarketplaceOrderDetailScreenState
     extends State<MarketplaceOrderDetailScreen> {
   final _biteship = BiteshipService();
+  final _chatService = AdminChatService();
   final _currency =
       NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
   bool _processing = false;
@@ -99,6 +99,114 @@ class _MarketplaceOrderDetailScreenState
     }
   }
 
+  // ── Hubungi Pembeli (Obrolan / WhatsApp) ──────────────────────
+  // WhatsApp diambil dari profil user (user/{customerId}.whatsapp) yang sudah
+  // diverifikasi pembeli — BUKAN dari customerDetails pesanan.
+  String _statusLabel(String status) {
+    final s = status.toLowerCase();
+    if (s == 'pending') return 'Menunggu Pembayaran';
+    if (s == 'processing') return 'Perlu Dikirim';
+    if (s == 'shipped' || s == 'dikirim') return 'Dalam Pengiriman';
+    if (s == 'delivered' || s == 'selesai') return 'Pesanan Selesai';
+    if (s == 'cancelled' || s == 'dibatalkan') return 'Pesanan Dibatalkan';
+    return status;
+  }
+
+  void _showContactSheet(Map<String, dynamic> data) {
+    final details = (data['customerDetails'] as Map<String, dynamic>?) ?? {};
+    final customerId =
+        (data['customerId'] ?? data['userId'] ?? '').toString();
+    final buyerName = (details['name'] as String?) ??
+        data['customer'] as String? ??
+        'Pembeli';
+    if (customerId.isEmpty || customerId == 'guest') {
+      _snack('Pesanan tanpa akun pembeli (guest), tidak bisa dihubungi.',
+          error: true);
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Hubungi Pembeli',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ),
+            ),
+            ListTile(
+              leading: CircleAvatar(
+                backgroundColor:
+                    Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.1),
+                child: Icon(Icons.chat_bubble_outline,
+                    color: Theme.of(ctx).colorScheme.primary),
+              ),
+              title: const Text('Obrolan'),
+              subtitle: const Text('Balas chat pembeli di aplikasi'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) =>
+                      AdminChatScreen(userId: customerId, title: buyerName),
+                ));
+              },
+            ),
+            ListTile(
+              leading: CircleAvatar(
+                backgroundColor: Colors.green.withValues(alpha: 0.12),
+                child: const Icon(Icons.chat, color: Colors.green),
+              ),
+              title: const Text('WhatsApp'),
+              subtitle: const Text('Nomor WhatsApp terverifikasi pembeli'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _contactViaWhatsapp(customerId, buyerName, data);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _contactViaWhatsapp(
+      String customerId, String buyerName, Map<String, dynamic> data) async {
+    final profile = await _chatService.fetchBuyerProfile(customerId);
+    if (!mounted) return;
+    final wa = profile?.whatsapp ?? '';
+    if (wa.isEmpty) {
+      _snack('Pembeli belum memiliki WhatsApp terverifikasi.', error: true);
+      return;
+    }
+    final digits = wa.replaceAll(RegExp(r'[^0-9]'), '');
+    final id = widget.orderId;
+    final shortId =
+        id.substring(0, id.length < 8 ? id.length : 8).toUpperCase();
+    final total = (data['total'] as num?)?.toDouble() ?? 0;
+    final status = data['status'] as String? ?? 'pending';
+    final text = 'Halo $buyerName, ini admin Manafidh Store 👋\n\n'
+        'Kami menghubungi Anda terkait pesanan #$shortId.\n'
+        'Total: ${_currency.format(total)}\n'
+        'Status: ${_statusLabel(status)}\n\n';
+    final uri = Uri.parse('https://wa.me/$digits?text=${Uri.encodeComponent(text)}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      _snack('Tidak dapat membuka WhatsApp.', error: true);
+    }
+  }
+
   /// Validasi pesanan non-kurir (COD / Ambil di Tempat) — buka layar validasi
   /// scan/konfirmasi qty.
   void _validate(Map<String, dynamic> data) {
@@ -116,43 +224,23 @@ class _MarketplaceOrderDetailScreenState
     ));
   }
 
-  /// Cetak struk — memakai layar & template yang sama dengan pesanan POS,
-  /// termasuk identitas toko dari Pengaturan Struk.
-  void _print(Map<String, dynamic> data) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) =>
-          PrintPageScreen(order: Order.fromMap(widget.orderId, data)),
-    ));
-  }
-
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: _ref.snapshots(),
-      builder: (context, snapshot) {
-        final waiting = snapshot.connectionState == ConnectionState.waiting;
-        final data = !waiting && snapshot.hasData && snapshot.data!.exists
-            ? snapshot.data!.data()!
-            : null;
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Detail Pesanan'),
-            actions: [
-              if (data != null)
-                IconButton(
-                  icon: const Icon(Ionicons.print_outline),
-                  tooltip: 'Cetak Struk',
-                  onPressed: () => _print(data),
-                ),
-            ],
-          ),
-          body: waiting
-              ? const Center(child: CircularProgressIndicator())
-              : data == null
-                  ? const Center(child: Text('Pesanan tidak ditemukan.'))
-                  : _buildBody(data),
-        );
-      },
+    return Scaffold(
+      appBar: AppBar(title: const Text('Detail Pesanan')),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: _ref.snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            return const Center(child: Text('Pesanan tidak ditemukan.'));
+          }
+          final data = snapshot.data!.data()!;
+          return _buildBody(data);
+        },
+      ),
     );
   }
 
@@ -289,55 +377,73 @@ class _MarketplaceOrderDetailScreenState
           ),
         ),
 
-        // Bar aksi bawah
-        if (canShip || canValidate || canCancel)
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  if (canCancel)
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _processing ? null : _cancel,
-                        style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red),
-                        child: const Text('Batalkan'),
-                      ),
-                    ),
-                  // Kurir → Proses Pesanan (Biteship)
-                  if (canShip) ...[
-                    if (canCancel) const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _processing ? null : _ship,
-                        icon: _processing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.local_shipping, size: 18),
-                        label: const Text('Proses Pesanan'),
-                      ),
-                    ),
-                  ],
-                  // Non-kurir (COD / Ambil di Tempat) → Validasi Pesanan
-                  if (canValidate) ...[
-                    if (canCancel) const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed:
-                            _processing ? null : () => _validate(data),
-                        icon: const Icon(Icons.fact_check_outlined, size: 18),
-                        label: const Text('Validasi Pesanan'),
-                      ),
-                    ),
-                  ],
+        // Bar aksi bawah — "Hubungi" selalu ada; aksi lain sesuai status.
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showContactSheet(data),
+                    icon: const Icon(Icons.headset_mic_outlined),
+                    label: const Text('Hubungi'),
+                    style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12)),
+                  ),
+                ),
+                if (canShip || canValidate || canCancel) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      if (canCancel)
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _processing ? null : _cancel,
+                            style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red),
+                            child: const Text('Batalkan'),
+                          ),
+                        ),
+                      // Kurir → Proses Pesanan (Biteship)
+                      if (canShip) ...[
+                        if (canCancel) const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _processing ? null : _ship,
+                            icon: _processing
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2))
+                                : const Icon(Icons.local_shipping, size: 18),
+                            label: const Text('Proses Pesanan'),
+                          ),
+                        ),
+                      ],
+                      // Non-kurir (COD / Ambil di Tempat) → Validasi Pesanan
+                      if (canValidate) ...[
+                        if (canCancel) const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed:
+                                _processing ? null : () => _validate(data),
+                            icon:
+                                const Icon(Icons.fact_check_outlined, size: 18),
+                            label: const Text('Validasi Pesanan'),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
+        ),
       ],
     );
   }
