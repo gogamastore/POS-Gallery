@@ -42,6 +42,8 @@ class PosService {
     required String kasir,
     Customer? customer,
     String? userId,
+    double? amountPaid,
+    double? changeAmount,
   }) async {
     final WriteBatch batch = _firestore.batch();
     final DocumentReference orderRef = _firestore.collection('orders').doc();
@@ -60,7 +62,13 @@ class PosService {
       validatedAt: Timestamp.now(),
     );
 
-    batch.set(orderRef, newOrder.toFirestore());
+    // Uang tunai yang diterima & kembalian (khusus pembayaran 'cash') —
+    // disimpan untuk struk & rekonsiliasi laporan pendapatan.
+    final Map<String, dynamic> orderData = newOrder.toFirestore();
+    if (amountPaid != null) orderData['amountPaid'] = amountPaid;
+    if (changeAmount != null) orderData['changeAmount'] = changeAmount;
+
+    batch.set(orderRef, orderData);
 
     // PERBAIKAN FINAL: Hanya kurangi stok untuk produk katalog
     for (final item in items) {

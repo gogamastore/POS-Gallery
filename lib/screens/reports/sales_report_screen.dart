@@ -418,6 +418,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
               DataColumn(label: Text('Kasir')),
               DataColumn(label: Text('Total'), numeric: true),
               DataColumn(label: Text('Status')),
+              DataColumn(label: Text('Bayar')),
             ],
             rows: data.map((order) {
               return DataRow(
@@ -435,6 +436,7 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                       overflow: TextOverflow.ellipsis)),
                   DataCell(Text(formatter.formatCurrency(order.total.toDouble()))),
                   DataCell(Text(_translateStatus(order.status))),
+                  DataCell(Text(_paymentMethodLabel(order.paymentMethod))),
                 ],
               );
             }).toList(),
@@ -477,6 +479,29 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
         return 'Dibatalkan';
       default:
         return status;
+    }
+  }
+
+  /// Label metode pembayaran pembeli yang mudah dibaca.
+  String _paymentMethodLabel(String method) {
+    switch (method.toLowerCase()) {
+      case 'cash':
+      case 'tunai':
+        return 'Tunai';
+      case 'cod':
+        return 'COD (Bayar di Tempat)';
+      case 'bank_transfer':
+      case 'transfer':
+        return 'Transfer Bank';
+      case 'midtrans':
+        return 'Qris';
+      case 'qris':
+        return 'QRIS';
+      case '':
+      case 'n/a':
+        return '-';
+      default:
+        return method;
     }
   }
 
@@ -538,6 +563,8 @@ class _SalesReportScreenState extends ConsumerState<SalesReportScreen> {
                       Text(
                           'Tanggal: ${DateFormat('dd MMMM yyyy').format(_reportDate(order).toDate())}'),
                       Text('Pelanggan: ${_customerName(order)}'),
+                      Text(
+                          'Metode Pembayaran: ${_paymentMethodLabel(order.paymentMethod)}'),
                       const SizedBox(height: 4),
                       Row(
                         children: [

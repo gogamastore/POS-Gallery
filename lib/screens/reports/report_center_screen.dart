@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
 import 'sales_report_screen.dart'; // Import Laporan Penjualan
+import 'revenue_report_screen.dart'; // Import Laporan Pendapatan
 import 'customer_report_screen.dart'; // Import Laporan Pelanggan
 import 'operational_costs_screen.dart';
 import 'profit_loss_screen.dart';
@@ -25,6 +26,19 @@ class ReportCenterScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SalesReportScreen()),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.cash_outline,
+            title: 'Laporan Pendapatan',
+            subtitle: 'Pendapatan harian & rincian per metode bayar.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const RevenueReportScreen()),
               );
             },
           ),

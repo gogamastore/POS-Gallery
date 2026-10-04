@@ -3,6 +3,7 @@ import 'package:ionicons/ionicons.dart';
 
 import '../reports/customer_report_screen.dart';
 import '../reports/operational_costs_screen.dart';
+import '../reports/revenue_report_screen.dart';
 import '../reports/product_sales_report_screen.dart';
 import '../reports/purchase_report_screen.dart';
 import '../reports/sales_report_screen.dart';
@@ -29,6 +30,19 @@ class ReportsScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                     builder: (context) => const SalesReportScreen())),
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.cash_outline,
+            title: 'Laporan Pendapatan',
+            subtitle: 'Pendapatan harian & rincian per metode bayar.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const RevenueReportScreen()),
+              );
+            },
           ),
           _buildMenuItem(
             context,

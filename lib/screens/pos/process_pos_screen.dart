@@ -28,6 +28,12 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
   String _paymentMethod = 'cash';
   bool _isProcessing = false;
 
+  // Uang tunai yang diterima dari pembeli (hanya dipakai saat metode 'cash').
+  // Disimpan sebagai string digit agar keypad kalkulator mudah menambah angka.
+  String _cashRaw = '';
+  double get _cashReceived =>
+      _cashRaw.isEmpty ? 0 : (double.tryParse(_cashRaw) ?? 0);
+
   double _calculateTotalDiscount(WidgetRef ref) {
     final cartItems = ref.read(posCartProvider);
     double totalDiscount = 0;
@@ -122,9 +128,19 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
       return;
     }
 
+    // Pembayaran tunai: uang yang diterima harus menutup total.
+    if (_paymentMethod == 'cash' && _cashReceived < totalAmount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Uang tunai yang diterima kurang dari total.')),
+      );
+      return;
+    }
+
     setState(() => _isProcessing = true);
 
     try {
+      final bool isCash = _paymentMethod == 'cash';
       final String orderId = await PosService().processSaleTransaction(
         items: cartItems,
         totalAmount: totalAmount,
@@ -132,6 +148,8 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         paymentMethod: _paymentMethod,
         kasir: kasirName,
         customer: _selectedCustomer,
+        amountPaid: isCash ? _cashReceived : null,
+        changeAmount: isCash ? (_cashReceived - totalAmount) : null,
       );
 
       ref.read(posCartProvider.notifier).clearCart();
@@ -330,7 +348,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
                   _paymentMethod = value!;
                 });
               },
-              child: const Text('Cash'),
+              child: const Text('Cash / Tunai'),
             ),
             RadioMenuButton<String>(
               value: 'bank_transfer',
@@ -340,17 +358,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
                   _paymentMethod = value!;
                 });
               },
-              child: const Text('Bank Transfer'),
-            ),
-            RadioMenuButton<String>(
-              value: 'qris',
-              groupValue: _paymentMethod,
-              onChanged: (String? value) {
-                setState(() {
-                  _paymentMethod = value!;
-                });
-              },
-              child: const Text('QRIS'),
+              child: const Text('Transfer Bank'),
             ),
             RadioMenuButton<String>(
               value: 'midtrans',
@@ -360,11 +368,164 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
                   _paymentMethod = value!;
                 });
               },
-              child: const Text('Midtrans (QRIS / VA / E-Wallet)'),
+              child: const Text('Midtrans (QRIS)'),
             ),
+            if (_paymentMethod == 'cash') _buildCashPaymentSection(),
           ],
         ),
       ),
+    );
+  }
+
+  // ─── Input pembayaran tunai: nominal cepat + keypad + kembalian ──────
+  void _appendCash(String digits) {
+    setState(() {
+      if (_cashRaw.length >= 12) return; // batasi agar tidak kebablasan
+      if (_cashRaw.isEmpty && (digits == '0' || digits == '000')) return;
+      _cashRaw += digits;
+    });
+  }
+
+  void _backspaceCash() {
+    setState(() {
+      if (_cashRaw.isNotEmpty) {
+        _cashRaw = _cashRaw.substring(0, _cashRaw.length - 1);
+      }
+    });
+  }
+
+  void _setCash(double value) {
+    setState(() => _cashRaw = value.round().toString());
+  }
+
+  Widget _buildCashPaymentSection() {
+    final currency =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final totalAmount = ref.watch(posTotalProvider);
+    final change = _cashReceived - totalAmount;
+    final bool sufficient = _cashReceived >= totalAmount && _cashReceived > 0;
+    final quickNominals = <double>[10000, 50000, 100000, 200000];
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Uang Diterima',
+              style: TextStyle(fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          // Nominal cepat
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton(
+                onPressed: () => _setCash(totalAmount),
+                child: const Text('Uang Pas'),
+              ),
+              ...quickNominals.map((n) => OutlinedButton(
+                    onPressed: () => _setCash(n),
+                    child: Text(NumberFormat.decimalPattern('id_ID').format(n)),
+                  )),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Layar jumlah uang & kembalian
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F3F5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Uang Dibayar',
+                        style: TextStyle(color: Colors.black54)),
+                    Row(
+                      children: [
+                        Text(currency.format(_cashReceived),
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold)),
+                        if (_cashRaw.isNotEmpty)
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () => setState(() => _cashRaw = ''),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+                const Divider(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Kembalian',
+                        style: TextStyle(color: Colors.black54)),
+                    Text(
+                      change >= 0
+                          ? currency.format(change)
+                          : 'Kurang ${currency.format(-change)}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: sufficient
+                            ? const Color(0xFF27AE60)
+                            : Colors.redAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Keypad kalkulator
+          _buildCashKeypad(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCashKeypad() {
+    Widget key(String label, {VoidCallback? onTap, Widget? child}) {
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.all(4.0),
+          child: OutlinedButton(
+            onPressed: onTap ?? () => _appendCash(label),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              foregroundColor: const Color(0xFF2C3E50),
+            ),
+            child: child ??
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600)),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(children: [key('1'), key('2'), key('3')]),
+        Row(children: [key('4'), key('5'), key('6')]),
+        Row(children: [key('7'), key('8'), key('9')]),
+        Row(children: [
+          key('000'),
+          key('0'),
+          key('⌫',
+              onTap: _backspaceCash,
+              child: const Icon(Icons.backspace_outlined)),
+        ]),
+      ],
     );
   }
 

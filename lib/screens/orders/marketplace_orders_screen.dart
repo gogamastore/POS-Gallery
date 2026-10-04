@@ -28,6 +28,11 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
 
   String? _processingId;
 
+  // Filter tanggal (default 1 bulan terahir) + pencarian — meniru web.
+  final _searchController = TextEditingController();
+  String _searchTerm = '';
+  DateTimeRange? _dateRange;
+
   static const _tabs = [
     'Belum Bayar',
     'Perlu Dikirim',
@@ -40,11 +45,19 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    // Default: 1 bulan terakhir (30 hari), semua status.
+    final now = DateTime.now();
+    _dateRange = DateTimeRange(
+      start: DateTime(now.year, now.month, now.day)
+          .subtract(const Duration(days: 30)),
+      end: now,
+    );
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -92,6 +105,49 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
       _ => _isCancelled,
     };
     return all.where((d) => test(d.data())).toList();
+  }
+
+  // ── Filter tanggal + pencarian (diterapkan sebelum klasifikasi tab) ──
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _applyFilters(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> all,
+  ) {
+    final q = _searchTerm.trim().toLowerCase();
+    return all.where((doc) {
+      final d = doc.data();
+
+      if (_dateRange != null) {
+        final ts = d['date'];
+        if (ts is! Timestamp) return false;
+        final dt = ts.toDate();
+        final start = DateTime(_dateRange!.start.year, _dateRange!.start.month,
+            _dateRange!.start.day);
+        final end = DateTime(_dateRange!.end.year, _dateRange!.end.month,
+            _dateRange!.end.day, 23, 59, 59, 999);
+        if (dt.isBefore(start) || dt.isAfter(end)) return false;
+      }
+
+      if (q.isNotEmpty) {
+        final details = (d['customerDetails'] as Map<String, dynamic>?) ?? {};
+        final name = ((details['name'] as String?) ??
+                (d['customer'] as String?) ??
+                '')
+            .toLowerCase();
+        if (!name.contains(q) && !doc.id.toLowerCase().contains(q)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  Future<void> _pickDateRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: _dateRange,
+    );
+    if (picked != null) setState(() => _dateRange = picked);
   }
 
   // ── Aksi ─────────────────────────────────────────────────────────────
@@ -165,8 +221,11 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
       stream: _stream,
       builder: (context, snapshot) {
         final all = snapshot.data?.docs ?? [];
+        // Terapkan filter tanggal + pencarian sebelum klasifikasi tab, agar
+        // jumlah (count) tiap tab ikut mencerminkan hasil filter.
+        final filtered = _applyFilters(all);
         final counts =
-            List.generate(_tabs.length, (i) => _forTab(i, all).length);
+            List.generate(_tabs.length, (i) => _forTab(i, filtered).length);
 
         return Scaffold(
           appBar: AppBar(
@@ -186,15 +245,75 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
               ? _ErrorView(message: snapshot.error.toString())
               : snapshot.connectionState == ConnectionState.waiting
                   ? const Center(child: CircularProgressIndicator())
-                  : TabBarView(
-                      controller: _tabController,
+                  : Column(
                       children: [
-                        for (var i = 0; i < _tabs.length; i++)
-                          _buildList(_forTab(i, all)),
+                        _buildFilterBar(),
+                        Expanded(
+                          child: TabBarView(
+                            controller: _tabController,
+                            children: [
+                              for (var i = 0; i < _tabs.length; i++)
+                                _buildList(_forTab(i, filtered)),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
         );
       },
+    );
+  }
+
+  Widget _buildFilterBar() {
+    final df = DateFormat('dd MMM yyyy', 'id_ID');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            onChanged: (v) => setState(() => _searchTerm = v),
+            decoration: InputDecoration(
+              hintText: 'Cari No. Pesanan / Nama...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchTerm.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchTerm = '');
+                      },
+                    )
+                  : null,
+              isDense: true,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _pickDateRange,
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: Text(
+                    _dateRange == null
+                        ? 'Semua tanggal'
+                        : '${df.format(_dateRange!.start)} - ${df.format(_dateRange!.end)}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              if (_dateRange != null)
+                TextButton(
+                  onPressed: () => setState(() => _dateRange = null),
+                  child: const Text('Semua'),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

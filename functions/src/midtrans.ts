@@ -154,11 +154,16 @@ export const createMidtransTransaction = onCall(
             billing_address: { address: order.customerDetails?.address ?? "" },
             shipping_address: { address: order.customerDetails?.address ?? "" },
           },
-      enabled_payments: [
-        "gopay", "shopeepay", "other_qris",
-        "bca_va", "bni_va", "bri_va", "mandiri_bill", "permata_va", "other_va",
-        "indomaret", "alfamart", "credit_card",
-      ],
+      // Kasir POS hanya menerima QRIS lewat Midtrans (tunai & transfer bank
+      // ditangani langsung di kasir). Pembeli marketplace tetap bisa semua
+      // metode. `other_qris` = kanal QRIS generik di Snap.
+      enabled_payments: isPosOrder
+        ? ["other_qris"]
+        : [
+            "gopay", "shopeepay", "other_qris",
+            "bca_va", "bni_va", "bri_va", "mandiri_bill", "permata_va", "other_va",
+            "indomaret", "alfamart", "credit_card",
+          ],
       expiry: isPosOrder
         ? { unit: "minutes", duration: POS_EXPIRY_MINUTES }
         : { unit: "hours", duration: 24 },
