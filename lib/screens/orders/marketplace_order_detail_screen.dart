@@ -301,6 +301,7 @@ class _MarketplaceOrderDetailScreenState
     final voucherCode = data['voucherCode'] as String?;
     final adminFee = (data['adminFee'] as num?)?.toDouble() ?? 0;
     final serviceFee = (data['serviceFee'] as num?)?.toDouble() ?? 0;
+    final paymentFee = (data['paymentFee'] as num?)?.toDouble() ?? 0;
     final date = data['date'];
     final dateText = date is Timestamp
         ? DateFormat('dd MMMM yyyy, HH:mm', 'id_ID').format(date.toDate())
@@ -373,6 +374,8 @@ class _MarketplaceOrderDetailScreenState
                   _row('Biaya Admin', _currency.format(adminFee)),
                 if (serviceFee > 0)
                   _row('Biaya Layanan', _currency.format(serviceFee)),
+                if (paymentFee > 0)
+                  _row('Biaya Layanan Pembayaran', _currency.format(paymentFee)),
                 _row('Berat Total Pesanan', '$totalWeightGram gram'),
                 _row('Total', _currency.format(total), bold: true),
               ]),

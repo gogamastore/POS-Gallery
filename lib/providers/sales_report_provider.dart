@@ -167,19 +167,28 @@ class SalesReportNotifier extends StateNotifier<SalesReportState> {
 
       for (final order in orders) {
         double orderCogs = 0;
-        
+        double productRevenue = 0;
+
         for (final item in order.products) {
           final productId = item['productId'] as String?;
           final quantity = (item['quantity'] as num?)?.toDouble() ?? 0.0;
-          
-          if (productId != null && productsMap.containsKey(productId)) {
-            final productDetails = productsMap[productId]!;
-            final purchasePrice = productDetails.purchasePrice ?? 0.0;
-            orderCogs += purchasePrice * quantity;
-          }
+          final sellPrice = (item['price'] as num?)?.toDouble() ?? 0.0;
+          productRevenue += sellPrice * quantity;
+
+          // Modal = snapshot saat validasi (item['purchasePrice']) → fallback
+          // ke modal produk terkini untuk pesanan lama yang belum punya
+          // snapshot. Tetap dihitung walau produk sudah dihapus.
+          final stored = (item['purchasePrice'] as num?)?.toDouble();
+          final purchasePrice = stored ??
+              (productId != null ? productsMap[productId]?.purchasePrice : null) ??
+              0.0;
+          orderCogs += purchasePrice * quantity;
         }
-        
-        final orderGrossProfit = order.total.toDouble() - orderCogs;
+
+        // Keuntungan HANYA dari penjualan produk (harga jual - modal) × qty.
+        // Biaya admin, biaya layanan, biaya layanan pembayaran, & ongkir TIDAK
+        // dihitung sebagai keuntungan.
+        final orderGrossProfit = productRevenue - orderCogs;
 
         ordersWithProfit.add(order.copyWith(
           cogs: orderCogs,

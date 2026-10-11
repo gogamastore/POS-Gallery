@@ -3,6 +3,7 @@ import 'package:ionicons/ionicons.dart';
 import 'sales_report_screen.dart'; // Import Laporan Penjualan
 import 'revenue_report_screen.dart'; // Import Laporan Pendapatan
 import 'cashdrawer_report_screen.dart'; // Import Laporan Cashdrawer
+import 'admin_fees_report_screen.dart'; // Import Laporan Biaya Admin & Layanan
 import 'customer_report_screen.dart'; // Import Laporan Pelanggan
 import 'operational_costs_screen.dart';
 import 'profit_loss_screen.dart';
@@ -53,6 +54,19 @@ class ReportCenterScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                     builder: (context) => const CashdrawerReportScreen()),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.receipt_outline,
+            title: 'Laporan Biaya Admin & Layanan',
+            subtitle: 'Biaya admin, layanan & pembayaran dari pembeli marketplace.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const AdminFeesReportScreen()),
               );
             },
           ),

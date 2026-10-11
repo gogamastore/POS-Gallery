@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
 
 import '../reports/customer_report_screen.dart';
+import '../reports/admin_fees_report_screen.dart';
 import '../reports/operational_costs_screen.dart';
 import '../reports/revenue_report_screen.dart';
 import '../reports/product_sales_report_screen.dart';
@@ -55,6 +56,19 @@ class ReportsScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                     builder: (context) => const CashdrawerReportScreen()),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.receipt_outline,
+            title: 'Laporan Biaya Admin & Layanan',
+            subtitle: 'Biaya admin, layanan & pembayaran dari pembeli marketplace.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const AdminFeesReportScreen()),
               );
             },
           ),

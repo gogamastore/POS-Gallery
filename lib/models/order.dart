@@ -28,6 +28,7 @@ class Order {
   /// checkout web/app pembeli). Null untuk pesanan POS.
   final num? adminFee;
   final num? serviceFee;
+  final num? paymentFee;
 
   // Payment Info
   final String paymentMethod;
@@ -66,6 +67,7 @@ class Order {
     this.shippingFee,
     this.adminFee,
     this.serviceFee,
+    this.paymentFee,
     required this.paymentMethod,
     required this.paymentStatus,
     required this.status,
@@ -107,6 +109,7 @@ class Order {
       shippingFee: data['shippingFee'] as num?,
       adminFee: data['adminFee'] as num?,
       serviceFee: data['serviceFee'] as num?,
+      paymentFee: data['paymentFee'] as num?,
       paymentMethod: data['paymentMethod'] as String? ?? 'N/A',
       paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
       status: data['status'] as String? ?? 'N/A',
@@ -143,6 +146,7 @@ class Order {
       shippingFee: shippingFee,
       adminFee: adminFee,
       serviceFee: serviceFee,
+      paymentFee: paymentFee,
       paymentMethod: paymentMethod,
       paymentStatus: paymentStatus,
       status: status,
