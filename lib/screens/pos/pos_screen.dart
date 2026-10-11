@@ -327,7 +327,7 @@ class PosScreenState extends ConsumerState<PosScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Total Penjualan:'),
+              const Text('Penjualan Tunai:'),
               Text(currencyFormat.format(totalSales))
             ]),
             const SizedBox(height: 8),

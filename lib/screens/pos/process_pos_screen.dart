@@ -9,6 +9,7 @@ import '../../models/pos_cart_item.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/customer_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/shift_provider.dart';
 import '../../services/midtrans_service.dart';
 import '../../services/pos_service.dart';
 import '../orders/print_page_screen.dart'; // Import PrintPageScreen
@@ -45,6 +46,17 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
     return totalDiscount;
   }
 
+  /// Kasir yang mencatat transaksi: utamakan kasir shift/cash drawer yang
+  /// sedang AKTIF; jika tidak ada shift aktif, pakai akun yang sedang login.
+  ({String? id, String name}) _activeCashier() {
+    final shift = ref.read(shiftProvider).activeShift;
+    final user = ref.read(userDataProvider).value;
+    if (shift != null && shift.cashierName.trim().isNotEmpty) {
+      return (id: shift.cashierId, name: shift.cashierName);
+    }
+    return (id: user?.uid, name: user?.name ?? 'Kasir');
+  }
+
   Future<void> _showCustomerSelectionDialog() async {
     final selected = await showDialog<Customer>(
       context: context,
@@ -64,8 +76,8 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
     final cartItems = ref.read(posCartProvider);
     final totalAmount = ref.read(posTotalProvider);
     final totalDiscount = _calculateTotalDiscount(ref);
-    final user = ref.read(userDataProvider).value;
-    final kasirName = user?.name ?? 'Kasir';
+    final cashier = _activeCashier();
+    final kasirName = cashier.name;
 
     if (cartItems.isEmpty) {
       if (!mounted) return;
@@ -84,6 +96,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         paymentMethod: _paymentMethod,
         kasir: kasirName,
         customer: _selectedCustomer,
+        cashierId: cashier.id,
       );
       ref.read(posCartProvider.notifier).clearCart();
       if (!mounted) return;
@@ -107,8 +120,8 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
     final cartItems = ref.read(posCartProvider);
     final totalAmount = ref.read(posTotalProvider);
     final totalDiscount = _calculateTotalDiscount(ref);
-    final user = ref.read(userDataProvider).value;
-    final kasirName = user?.name ?? 'Kasir';
+    final cashier = _activeCashier();
+    final kasirName = cashier.name;
 
     if (cartItems.isEmpty) {
       if (!mounted) return;
@@ -124,6 +137,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         totalAmount: totalAmount,
         totalDiscount: totalDiscount,
         kasirName: kasirName,
+        cashierId: cashier.id,
       );
       return;
     }
@@ -150,6 +164,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         customer: _selectedCustomer,
         amountPaid: isCash ? _cashReceived : null,
         changeAmount: isCash ? (_cashReceived - totalAmount) : null,
+        cashierId: cashier.id,
       );
 
       ref.read(posCartProvider.notifier).clearCart();
@@ -204,6 +219,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
     required double totalAmount,
     required double totalDiscount,
     required String kasirName,
+    String? cashierId,
   }) async {
     if (totalAmount < 1) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -223,6 +239,7 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         totalDiscount: totalDiscount,
         kasir: kasirName,
         customer: _selectedCustomer,
+        cashierId: cashierId,
       );
       redirectUrl = await MidtransService().createSnapTransaction(orderId);
     } catch (e) {

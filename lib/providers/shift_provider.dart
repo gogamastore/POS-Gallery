@@ -132,24 +132,52 @@ class ShiftNotifier extends StateNotifier<ShiftState> {
     final now = Timestamp.now();
     final startTime = shift.startTime;
 
+    // Laci kas hanya berisi UANG TUNAI, jadi "Modal Akhir" dihitung dari
+    // penjualan POS TUNAI yang berhasil selama shift. Penjualan QRIS/Transfer
+    // tidak menambah uang di laci (dimasukkan manual saat menutup shift).
+    // Field total order = `total` (BUKAN `totalPrice`); dibaca null-safe agar
+    // order tanpa nilai tidak menyebabkan crash cast.
     final salesSnapshot = await _firestore
         .collection('orders')
         .where('createdAt', isGreaterThanOrEqualTo: startTime)
         .where('createdAt', isLessThanOrEqualTo: now)
         .get();
-    final totalSales = salesSnapshot.docs.fold(0.0, (total, doc) => total + (doc.data()['totalPrice'] as num));
+
+    // Hanya transaksi milik kasir shift ini (cashierId) yang direkonsiliasi.
+    final cashierId = shift.cashierId;
+
+    double cashSales = 0.0;
+    for (final doc in salesSnapshot.docs) {
+      final d = doc.data();
+      final isPos = (d['source'] as String?) == 'pos';
+      final status = (d['status'] as String? ?? '').toLowerCase();
+      final method = (d['paymentMethod'] as String? ?? '').toLowerCase();
+      final docCashier = d['cashierId'] as String?;
+      if (isPos &&
+          status == 'success' &&
+          (method == 'cash' || method == 'tunai') &&
+          docCashier == cashierId) {
+        cashSales += (d['total'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
 
     final expensesSnapshot = await _firestore
         .collection('operational_expenses')
         .where('date', isGreaterThanOrEqualTo: startTime)
         .where('date', isLessThanOrEqualTo: now)
         .get();
-    final totalExpenses = expensesSnapshot.docs.fold(0.0, (total, doc) => total + (doc.data()['amount'] as num));
+    double totalExpenses = 0.0;
+    for (final doc in expensesSnapshot.docs) {
+      final e = doc.data();
+      if ((e['cashierId'] as String?) == cashierId) {
+        totalExpenses += (e['amount'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
 
     return {
-      'totalSales': totalSales,
+      'totalSales': cashSales,
       'totalExpenses': totalExpenses,
-      'endingCash': shift.startingCash + totalSales - totalExpenses,
+      'endingCash': shift.startingCash + cashSales - totalExpenses,
     };
   }
 

@@ -37,7 +37,10 @@ export const createMidtransTransaction = onCall(
       throw new HttpsError("unauthenticated", "User harus login.");
     }
 
-    const { orderId } = request.data as { orderId: string };
+    const { orderId, qrisOnly } = request.data as {
+      orderId: string;
+      qrisOnly?: boolean;
+    };
     if (!orderId) {
       throw new HttpsError("invalid-argument", "orderId wajib diisi.");
     }
@@ -53,14 +56,18 @@ export const createMidtransTransaction = onCall(
     const userDoc = await db.collection("user").doc(request.auth.uid).get();
     const user = userDoc.data() ?? {};
 
+    const isStaff = POS_STAFF_ROLES.includes(user.role);
     if (isPosOrder) {
-      if (!POS_STAFF_ROLES.includes(user.role)) {
+      if (!isStaff) {
         throw new HttpsError("permission-denied", "Hanya kasir/admin yang dapat memproses transaksi POS.");
       }
       if (order.status !== "pending") {
         throw new HttpsError("failed-precondition", "Transaksi POS ini tidak sedang menunggu pembayaran.");
       }
-    } else if (order.customerId !== request.auth.uid) {
+    } else if (order.customerId !== request.auth.uid && !isStaff) {
+      // Pembeli boleh membayar pesanannya sendiri; kasir/admin juga boleh
+      // membuat pembayaran (mis. QRIS) saat memvalidasi pesanan marketplace
+      // di toko.
       throw new HttpsError("permission-denied", "Akses ditolak.");
     }
     if (order.paymentStatus === "paid") {
@@ -155,9 +162,10 @@ export const createMidtransTransaction = onCall(
             shipping_address: { address: order.customerDetails?.address ?? "" },
           },
       // Kasir POS hanya menerima QRIS lewat Midtrans (tunai & transfer bank
-      // ditangani langsung di kasir). Pembeli marketplace tetap bisa semua
-      // metode. `other_qris` = kanal QRIS generik di Snap.
-      enabled_payments: isPosOrder
+      // ditangani langsung di kasir). Validasi marketplace di kasir juga bisa
+      // minta QRIS-only via `qrisOnly`. Pembeli marketplace (checkout mandiri)
+      // tetap bisa semua metode. `other_qris` = kanal QRIS generik di Snap.
+      enabled_payments: isPosOrder || qrisOnly === true
         ? ["other_qris"]
         : [
             "gopay", "shopeepay", "other_qris",
@@ -264,6 +272,19 @@ export const handleMidtransNotification = onRequest(
         orderStatus = "Cancelled";
       } else if (transactionStatus === "pending") {
         paymentStatus = "pending_payment";
+      }
+
+      // Jangan turunkan pesanan yang SUDAH selesai (Delivered) kembali ke
+      // Processing bila Midtrans mengirim notifikasi settlement ganda — mis.
+      // pesanan marketplace yang divalidasi di kasir lalu dibayar QRIS dan
+      // ditandai Selesai oleh aplikasi.
+      const currentStatus =
+        (orderSnap.get("status") as string | undefined) ?? "";
+      if (
+        orderStatus === "Processing" &&
+        ["delivered", "selesai"].includes(currentStatus.toLowerCase())
+      ) {
+        orderStatus = null;
       }
 
       const updateData: Record<string, any> = {

@@ -129,8 +129,69 @@ class _RevenueReportScreenState extends ConsumerState<RevenueReportScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            // Filter kanal penjualan (sama seperti Laporan Penjualan).
+            Text('Sumber', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildSourceChip(
+                      notifier, state, RevenueSourceFilter.all, 'Semua'),
+                  _buildSourceChip(
+                      notifier, state, RevenueSourceFilter.pos, 'POS'),
+                  _buildSourceChip(notifier, state,
+                      RevenueSourceFilter.marketplace, 'Marketplace'),
+                ],
+              ),
+            ),
+            if (state.cashiers.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Kasir', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String?>(
+                key: ValueKey('cashier-${state.cashierFilter ?? 'all'}'),
+                initialValue: state.cashierFilter,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Ionicons.person_outline),
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null, child: Text('Semua Kasir')),
+                  ...state.cashiers.map((c) => DropdownMenuItem<String?>(
+                        value: c.id,
+                        child: Text(c.name, overflow: TextOverflow.ellipsis),
+                      )),
+                ],
+                onChanged: (v) => notifier.setCashierFilter(v),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSourceChip(RevenueReportNotifier notifier,
+      RevenueReportState state, RevenueSourceFilter source, String label) {
+    final bool isActive = state.sourceFilter == source;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8.0),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: isActive,
+        onSelected: (selected) {
+          if (selected) notifier.setSourceFilter(source);
+        },
+        selectedColor: Theme.of(context).primaryColor,
+        labelStyle: TextStyle(color: isActive ? Colors.white : Colors.black),
+        backgroundColor: Colors.grey[200],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }

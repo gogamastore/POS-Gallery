@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
 
+import '../../providers/shift_provider.dart';
+import '../../providers/user_provider.dart';
+
 class CostCategory {
   final String id;
   final String name;
@@ -101,6 +104,15 @@ class OperationalTransactionScreen extends ConsumerWidget {
       return;
     }
 
+    // Kasir pencatat biaya: utamakan kasir shift/cash drawer yang aktif,
+    // fallback ke akun yang login. Dipakai untuk rekonsiliasi shift per-kasir.
+    final shift = ref.read(shiftProvider).activeShift;
+    final user = ref.read(userDataProvider).value;
+    final cashierId = shift?.cashierId ?? user?.uid;
+    final cashierName = (shift != null && shift.cashierName.trim().isNotEmpty)
+        ? shift.cashierName
+        : (user?.name ?? 'Kasir');
+
     final firestore = FirebaseFirestore.instance;
     final batch = firestore.batch();
 
@@ -111,6 +123,8 @@ class OperationalTransactionScreen extends ConsumerWidget {
         'amount': item.amount,
         'description': item.description,
         'date': FieldValue.serverTimestamp(),
+        'cashierId': cashierId,
+        'cashierName': cashierName,
       });
     }
 

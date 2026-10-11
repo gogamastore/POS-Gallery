@@ -25,11 +25,22 @@ class MidtransPaymentScreen extends ConsumerStatefulWidget {
   final String redirectUrl;
   final double totalAmount;
 
+  /// POS (default true): membatalkan/menutup → batalkan pesanan pending
+  /// (`cancelPendingMidtransOrder`). Validasi marketplace memakai `false`:
+  /// batal hanya menutup layar, pesanan yang sudah ada TIDAK dibatalkan.
+  final bool cancelOrderOnExit;
+
+  /// Bila diisi (mis. 'Delivered'), status pesanan di-set ke nilai ini setelah
+  /// pembayaran lunas — dipakai validasi marketplace agar pesanan jadi Selesai.
+  final String? completeStatusOnPaid;
+
   const MidtransPaymentScreen({
     super.key,
     required this.orderId,
     required this.redirectUrl,
     required this.totalAmount,
+    this.cancelOrderOnExit = true,
+    this.completeStatusOnPaid,
   });
 
   @override
@@ -108,6 +119,20 @@ class _MidtransPaymentScreenState extends ConsumerState<MidtransPaymentScreen> {
 
   Future<void> _onPaid(Order order) async {
     ref.read(posCartProvider.notifier).clearCart();
+    // Validasi marketplace: tandai pesanan Selesai setelah lunas.
+    if (widget.completeStatusOnPaid != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(widget.orderId)
+            .update({
+          'status': widget.completeStatusOnPaid,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+      } catch (_) {
+        // status final bukan penghalang menampilkan struk.
+      }
+    }
     await _closePaymentPage();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -156,9 +181,11 @@ class _MidtransPaymentScreenState extends ConsumerState<MidtransPaymentScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Batalkan Pembayaran?'),
-        content: const Text(
-            'Transaksi Midtrans ini akan dibatalkan. Keranjang tetap tersimpan '
-            'sehingga Anda bisa memilih metode pembayaran lain.'),
+        content: Text(widget.cancelOrderOnExit
+            ? 'Transaksi Midtrans ini akan dibatalkan. Keranjang tetap tersimpan '
+                'sehingga Anda bisa memilih metode pembayaran lain.'
+            : 'Tutup pembayaran QRIS. Pesanan TIDAK dibatalkan — Anda bisa '
+                'memproses pembayaran lagi atau memilih metode lain.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -166,13 +193,21 @@ class _MidtransPaymentScreenState extends ConsumerState<MidtransPaymentScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Ya, Batalkan',
-                style: TextStyle(color: Colors.redAccent)),
+            child: Text(widget.cancelOrderOnExit ? 'Ya, Batalkan' : 'Ya, Tutup',
+                style: const TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted || _finished) return;
+
+    // Validasi marketplace: jangan batalkan pesanan yang sudah ada — cukup tutup.
+    if (!widget.cancelOrderOnExit) {
+      _finished = true;
+      await _closePaymentPage();
+      if (mounted) _leave();
+      return;
+    }
 
     setState(() => _isCancelling = true);
     try {

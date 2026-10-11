@@ -1,17 +1,25 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/order.dart' as models;
 import '../../models/order_item.dart';
+import '../../models/user_model.dart';
+import '../../providers/shift_provider.dart' show cashiersProvider;
+import '../../services/midtrans_service.dart';
 import '../../services/order_service.dart';
+import '../pos/midtrans_payment_screen.dart';
+import 'print_page_screen.dart';
 
 /// Ringkasan hasil validasi → konfirmasi & proses.
 ///
 /// Memakai [OrderService.updateOrderDetails] (rekonsiliasi stok delta
-/// `increment(oldQty - newQty)` + tulis produk/total/`kasir`) lalu set status
-/// 'Processing'. TIDAK menulis `validatedAt` (laporan memfilter via `source`).
-class MarketplaceValidationSummaryScreen extends StatefulWidget {
+/// `increment(oldQty - newQty)` + tulis produk/total/`kasir`) lalu set status.
+/// Kasir/validator WAJIB dipilih dari daftar user role 'admin' (disimpan sebagai
+/// `kasir` + `cashierId`). Pembayaran: Cash / Transfer Bank (tandai lunas) atau
+/// Midtrans (QRIS) — membuat transaksi Snap QRIS-only lalu menunggu webhook.
+class MarketplaceValidationSummaryScreen extends ConsumerStatefulWidget {
   final String orderId;
   final List<OrderItem> validatedItems;
   final double shippingFee;
@@ -26,20 +34,22 @@ class MarketplaceValidationSummaryScreen extends StatefulWidget {
   });
 
   @override
-  State<MarketplaceValidationSummaryScreen> createState() =>
+  ConsumerState<MarketplaceValidationSummaryScreen> createState() =>
       _MarketplaceValidationSummaryScreenState();
 }
 
 class _MarketplaceValidationSummaryScreenState
-    extends State<MarketplaceValidationSummaryScreen> {
+    extends ConsumerState<MarketplaceValidationSummaryScreen> {
   final _orderService = OrderService();
   final _currency =
       NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-  late final TextEditingController _kasirController;
   bool _processing = false;
 
-  // Metode pembayaran (hanya relevan bila pesanan belum lunas), meniru
-  // process_pos_screen: cash / bank_transfer / qris.
+  // Kasir/validator yang dipilih (wajib) dari daftar role 'admin'.
+  UserModel? _selectedCashier;
+
+  // Metode pembayaran (hanya relevan bila pesanan belum lunas):
+  // cash / bank_transfer (tandai lunas) atau midtrans (Midtrans QRIS).
   String _paymentMethod = 'cash';
 
   /// Sudah lunas? (paid/settlement/lunas). Jika ya, pilihan metode pembayaran
@@ -62,11 +72,6 @@ class _MarketplaceValidationSummaryScreenState
   @override
   void initState() {
     super.initState();
-    final user = FirebaseAuth.instance.currentUser;
-    _kasirController = TextEditingController(
-        text: user?.displayName?.isNotEmpty == true
-            ? user!.displayName!
-            : (user?.email ?? ''));
     _loadOrderExtras();
   }
 
@@ -92,17 +97,11 @@ class _MarketplaceValidationSummaryScreenState
     }
   }
 
-  @override
-  void dispose() {
-    _kasirController.dispose();
-    super.dispose();
-  }
-
   Future<void> _confirm() async {
-    final kasir = _kasirController.text.trim();
-    if (kasir.isEmpty) {
+    final cashier = _selectedCashier;
+    if (cashier == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Nama kasir/validator wajib diisi.'),
+        content: Text('Pilih kasir/validator terlebih dahulu.'),
         backgroundColor: Colors.orange,
       ));
       return;
@@ -111,6 +110,9 @@ class _MarketplaceValidationSummaryScreenState
     setState(() => _processing = true);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+
+    final bool isMidtrans = !_isPaid && _paymentMethod == 'midtrans';
+
     try {
       // 1. Rekonsiliasi stok (delta) + tulis produk/total/kasir.
       await _orderService.updateOrderDetails(
@@ -118,18 +120,50 @@ class _MarketplaceValidationSummaryScreenState
         widget.validatedItems,
         _subtotal,
         _total,
-        validatorName: kasir,
+        validatorName: cashier.name,
       );
-      // 2. Non-kurir (COD / Ambil di Tempat): validasi = pesanan selesai.
+
+      if (isMidtrans) {
+        // Validasi DULU tanpa menandai lunas/selesai (status tetap 'Processing').
+        // Kunci modal + catat validatedAt, cashierId, metode 'midtrans'.
+        await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(widget.orderId)
+            .update({
+          'validatedAt': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+          'cashierId': cashier.uid,
+          'paymentMethod': 'midtrans',
+        });
+        await _orderService.snapshotPurchasePrices(widget.orderId);
+
+        // Buat transaksi Midtrans QRIS-only lalu buka layar pembayaran.
+        // Webhook menandai lunas; layar pembayaran men-set status 'Delivered'.
+        final redirectUrl = await MidtransService()
+            .createSnapTransaction(widget.orderId, qrisOnly: true);
+        if (!mounted) return;
+        await navigator.push(MaterialPageRoute(
+          builder: (_) => MidtransPaymentScreen(
+            orderId: widget.orderId,
+            redirectUrl: redirectUrl,
+            totalAmount: _total,
+            cancelOrderOnExit: false,
+            completeStatusOnPaid: 'Delivered',
+          ),
+        ));
+        // Lunas → layar pembayaran lanjut ke struk (layar ini ikut tertutup).
+        // Batal/tutup → kembali ke sini, kasir bisa pilih metode lain.
+        if (mounted) setState(() => _processing = false);
+        return;
+      }
+
+      // 2. Non-Midtrans (cash/transfer, atau sudah lunas): langsung selesai.
       await _orderService.updateOrderStatus(widget.orderId, 'Delivered');
 
-      // 3. Catat waktu pesanan DIPROSES (validatedAt) — dipakai laporan
-      //    penjualan agar memuat pesanan yang diproses hari ini, bukan
-      //    tanggal pesanan dibuat pembeli. Sekaligus catat pembayaran POS
-      //    bila pesanan belum lunas.
       final Map<String, dynamic> extra = {
         'validatedAt': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
+        'cashierId': cashier.uid,
       };
       if (!_isPaid) {
         extra['paymentStatus'] = 'paid';
@@ -140,14 +174,33 @@ class _MarketplaceValidationSummaryScreenState
           .doc(widget.orderId)
           .update(extra);
 
-      // 4. Kunci modal (purchasePrice) tiap produk saat validasi → laporan
-      //    penjualan pakai modal ini, akurat & tak berubah oleh restok.
       await _orderService.snapshotPurchasePrices(widget.orderId);
 
       messenger.showSnackBar(const SnackBar(
         content: Text('Pesanan berhasil divalidasi & diselesaikan.'),
         backgroundColor: Colors.green,
       ));
+
+      // Lanjut ke halaman cetak struk/label (seperti alur POS). Ambil order
+      // terbaru dari Firestore agar PrintPageScreen punya data lengkap.
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(widget.orderId)
+            .get();
+        if (doc.exists && mounted) {
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) =>
+                  PrintPageScreen(order: models.Order.fromFirestore(doc)),
+            ),
+            (route) => route.isFirst,
+          );
+          return;
+        }
+      } catch (_) {
+        // Gagal memuat untuk cetak — cukup kembali ke daftar.
+      }
       navigator.popUntil((route) => route.isFirst);
     } catch (e) {
       if (mounted) {
@@ -170,17 +223,10 @@ class _MarketplaceValidationSummaryScreenState
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                const Text('Kasir / Validator',
+                const Text('Kasir / Validator *',
                     style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: _kasirController,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person_outline),
-                    hintText: 'Nama kasir yang memvalidasi',
-                  ),
-                ),
+                _buildCashierDropdown(),
                 const SizedBox(height: 20),
                 const Text('Produk Tervalidasi',
                     style: TextStyle(fontWeight: FontWeight.bold)),
@@ -210,17 +256,16 @@ class _MarketplaceValidationSummaryScreenState
                 _totalRow('Total', _total, bold: true),
 
                 // Metode pembayaran — hanya bila pesanan BELUM lunas
-                // (mis. COD/Unpaid). Bila sudah 'paid', bagian ini disembunyikan
-                // dan status pembayaran tidak diubah.
+                // (mis. COD/Unpaid). Bila sudah 'paid', bagian ini disembunyikan.
                 if (!_isPaid) ...[
                   const SizedBox(height: 20),
                   const Text('Metode Pembayaran',
                       style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   for (final m in const [
-                    ('cash', 'Cash'),
-                    ('bank_transfer', 'Bank Transfer'),
-                    ('qris', 'QRIS'),
+                    ('cash', 'Cash / Tunai'),
+                    ('bank_transfer', 'Transfer Bank'),
+                    ('midtrans', 'Midtrans (QRIS)'),
                   ])
                     RadioListTile<String>(
                       contentPadding: EdgeInsets.zero,
@@ -230,6 +275,16 @@ class _MarketplaceValidationSummaryScreenState
                       onChanged: (v) =>
                           setState(() => _paymentMethod = v ?? 'cash'),
                       title: Text(m.$2),
+                    ),
+                  if (_paymentMethod == 'midtrans')
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 4),
+                      child: Text(
+                        'Pembeli membayar via QRIS. Layar pembayaran menunggu '
+                        'konfirmasi otomatis dari Midtrans.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey[600]),
+                      ),
                     ),
                 ] else
                   Padding(
@@ -255,14 +310,20 @@ class _MarketplaceValidationSummaryScreenState
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _processing ? null : _confirm,
+                  onPressed: (_processing || _selectedCashier == null)
+                      ? null
+                      : _confirm,
                   icon: _processing
                       ? const SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.check_circle),
-                  label: const Text('Konfirmasi & Proses'),
+                      : Icon(!_isPaid && _paymentMethod == 'midtrans'
+                          ? Icons.qr_code
+                          : Icons.check_circle),
+                  label: Text(!_isPaid && _paymentMethod == 'midtrans'
+                      ? 'Proses & Bayar QRIS'
+                      : 'Konfirmasi & Proses'),
                   style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(50)),
                 ),
@@ -271,6 +332,60 @@ class _MarketplaceValidationSummaryScreenState
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildCashierDropdown() {
+    final cashiersAsync = ref.watch(cashiersProvider);
+    return cashiersAsync.when(
+      loading: () => const InputDecorator(
+        decoration: InputDecoration(
+          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.person_outline),
+        ),
+        child: Text('Memuat daftar kasir...'),
+      ),
+      error: (e, _) => InputDecorator(
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.error_outline, color: Colors.red),
+        ),
+        child: Text('Gagal memuat kasir: $e'),
+      ),
+      data: (cashiers) {
+        if (cashiers.isEmpty) {
+          return const InputDecorator(
+            decoration: InputDecoration(
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.person_off_outlined),
+            ),
+            child: Text('Tidak ada user ber-role admin.'),
+          );
+        }
+        // Jaga agar nilai terpilih tetap valid bila daftar berubah.
+        final selectedUid = _selectedCashier?.uid;
+        final valid =
+            cashiers.any((c) => c.uid == selectedUid) ? selectedUid : null;
+        return DropdownButtonFormField<String>(
+          initialValue: valid,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.person_outline),
+            hintText: 'Pilih kasir yang memvalidasi',
+          ),
+          items: cashiers
+              .map((c) => DropdownMenuItem<String>(
+                    value: c.uid,
+                    child: Text(c.name, overflow: TextOverflow.ellipsis),
+                  ))
+              .toList(),
+          onChanged: (uid) => setState(() {
+            _selectedCashier =
+                cashiers.firstWhere((c) => c.uid == uid);
+          }),
+        );
+      },
     );
   }
 

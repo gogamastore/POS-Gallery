@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
 import 'sales_report_screen.dart'; // Import Laporan Penjualan
 import 'revenue_report_screen.dart'; // Import Laporan Pendapatan
+import 'cashdrawer_report_screen.dart'; // Import Laporan Cashdrawer
 import 'customer_report_screen.dart'; // Import Laporan Pelanggan
 import 'operational_costs_screen.dart';
 import 'profit_loss_screen.dart';
@@ -39,6 +40,19 @@ class ReportCenterScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                     builder: (context) => const RevenueReportScreen()),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.file_tray_full_outline,
+            title: 'Laporan Cashdrawer',
+            subtitle: 'Uang masuk laci kas: POS + marketplace "Ambil di Toko".',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const CashdrawerReportScreen()),
               );
             },
           ),

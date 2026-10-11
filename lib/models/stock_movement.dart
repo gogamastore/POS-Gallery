@@ -13,7 +13,8 @@ class StockMovement {
   final int change; // Perubahan kuantitas (+ untuk masuk, - untuk keluar)
   final StockMovementType type;
   final String referenceId; // ID dokumen sumber (orderId, transactionId, etc.)
-  
+  final String? source; // Kanal pesanan: 'pos' | 'marketplace' | null (non-pesanan)
+
   // Properti ini akan dihitung setelah semua data diurutkan
   int stockBefore;
   int stockAfter;
@@ -24,9 +25,27 @@ class StockMovement {
     required this.change,
     required this.type,
     required this.referenceId,
+    this.source,
     this.stockBefore = 0,
     this.stockAfter = 0,
   });
+
+  /// true untuk pergerakan yang berasal dari pesanan (bisa dibuka detailnya).
+  bool get isOrder =>
+      type == StockMovementType.sale || type == StockMovementType.cancellation;
+
+  /// Label sumber: POS = "Toko Offline", marketplace = "Toko Online".
+  /// null bila bukan dari pesanan (pembelian/penyesuaian).
+  String? get sourceLabel {
+    switch (source) {
+      case 'pos':
+        return 'Toko Offline';
+      case 'marketplace':
+        return 'Toko Online';
+      default:
+        return null;
+    }
+  }
 
   // Helper untuk mendapatkan label tipe yang lebih ramah pengguna
   String get typeLabel {

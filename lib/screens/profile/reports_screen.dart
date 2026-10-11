@@ -5,6 +5,7 @@ import '../reports/customer_report_screen.dart';
 import '../reports/operational_costs_screen.dart';
 import '../reports/revenue_report_screen.dart';
 import '../reports/product_sales_report_screen.dart';
+import '../reports/cashdrawer_report_screen.dart';
 import '../reports/purchase_report_screen.dart';
 import '../reports/sales_report_screen.dart';
 import '../reports/stock_flow_report_screen.dart';
@@ -41,6 +42,19 @@ class ReportsScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                     builder: (context) => const RevenueReportScreen()),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.file_tray_full_outline,
+            title: 'Laporan Cashdrawer',
+            subtitle: 'Uang masuk laci kas: POS + marketplace "Ambil di Toko".',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const CashdrawerReportScreen()),
               );
             },
           ),

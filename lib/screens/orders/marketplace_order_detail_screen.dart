@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../models/order.dart' as models;
 import '../../services/admin_chat_service.dart';
 import '../../services/biteship_service.dart';
 import '../../services/marketplace_order_actions.dart';
@@ -11,6 +12,7 @@ import '../../services/order_service.dart';
 import '../../widgets/marketplace_order_badges.dart';
 import '../chat/admin_chat_screen.dart';
 import 'marketplace_order_validation_screen.dart';
+import 'print_page_screen.dart';
 
 /// Detail pesanan marketplace — cerminan halaman web `dashboard/orders/[id]`.
 /// Real-time: mendengarkan dokumen `orders/{id}`.
@@ -224,10 +226,40 @@ class _MarketplaceOrderDetailScreenState
     ));
   }
 
+  /// Buka halaman cetak struk/label untuk pesanan ini (ambil data terbaru).
+  Future<void> _printOrder() async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final doc = await _ref.get();
+      if (!doc.exists) {
+        messenger.showSnackBar(
+            const SnackBar(content: Text('Pesanan tidak ditemukan.')));
+        return;
+      }
+      if (!mounted) return;
+      navigator.push(MaterialPageRoute(
+        builder: (_) => PrintPageScreen(order: models.Order.fromFirestore(doc)),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('Gagal membuka halaman cetak: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Detail Pesanan')),
+      appBar: AppBar(
+        title: const Text('Detail Pesanan'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: 'Cetak Struk / Label',
+            onPressed: _printOrder,
+          ),
+        ],
+      ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: _ref.snapshots(),
         builder: (context, snapshot) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
 
 import '../../providers/product_provider.dart';
@@ -20,11 +21,18 @@ class _StockFlowReportScreenState extends ConsumerState<StockFlowReportScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchTerm = '';
   late final SoundService _soundService;
+  // Rentang tanggal riwayat — default 30 hari terakhir (sama seperti web).
+  late DateTimeRange _dateRange;
 
   @override
   void initState() {
     super.initState();
     _soundService = SoundService();
+    final now = DateTime.now();
+    _dateRange = DateTimeRange(
+      start: DateTime(now.year, now.month, now.day).subtract(const Duration(days: 30)),
+      end: DateTime(now.year, now.month, now.day, 23, 59, 59),
+    );
     _searchController.addListener(() {
       if (mounted) {
         setState(() {
@@ -32,6 +40,23 @@ class _StockFlowReportScreenState extends ConsumerState<StockFlowReportScreen> {
         });
       }
     });
+  }
+
+  Future<void> _pickDateRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _dateRange,
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _dateRange = DateTimeRange(
+          start: DateTime(picked.start.year, picked.start.month, picked.start.day),
+          end: DateTime(picked.end.year, picked.end.month, picked.end.day, 23, 59, 59),
+        );
+      });
+    }
   }
 
   @override
@@ -63,14 +88,19 @@ class _StockFlowReportScreenState extends ConsumerState<StockFlowReportScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Laporan Arus Stok'),
-        // --- MODIFIKASI: Menghapus tombol kalender ---
-        actions: const [],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_today),
+            tooltip: 'Filter tanggal',
+            onPressed: _pickDateRange,
+          ),
+        ],
       ),
       body: Column(
         children: [
           // --- MODIFIKASI: Menambahkan TextField untuk pencarian ---
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -85,6 +115,27 @@ class _StockFlowReportScreenState extends ConsumerState<StockFlowReportScreen> {
                   borderRadius: BorderRadius.circular(8.0),
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+            ),
+          ),
+          // Indikator rentang tanggal riwayat (ketuk untuk ubah).
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: InkWell(
+              onTap: _pickDateRange,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.date_range, size: 16, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Riwayat: ${DateFormat('d MMM yyyy').format(_dateRange.start)} – ${DateFormat('d MMM yyyy').format(_dateRange.end)}',
+                      style: const TextStyle(fontSize: 13, color: Colors.black87),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -140,7 +191,7 @@ class _StockFlowReportScreenState extends ConsumerState<StockFlowReportScreen> {
                             context: context,
                             builder: (context) => StockHistoryDialog(
                               productId: product.id,
-                              // --- MODIFIKASI: Menghapus dateRange ---
+                              dateRange: _dateRange,
                             ),
                           );
                         },

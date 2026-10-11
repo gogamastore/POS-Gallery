@@ -14,6 +14,7 @@ class PosService {
     required String paymentMethod,
     required String kasir,
     Customer? customer,
+    String? cashierId,
   }) async {
     final DocumentReference orderRef = _firestore.collection('orders').doc();
 
@@ -28,6 +29,7 @@ class PosService {
       status: 'processing',
       paymentStatus: 'pending',
       stockUpdated: false, // Stok tidak diperbarui untuk draf
+      cashierId: cashierId,
     );
 
     // Hanya membuat pesanan, tidak ada operasi stok
@@ -44,6 +46,7 @@ class PosService {
     String? userId,
     double? amountPaid,
     double? changeAmount,
+    String? cashierId,
   }) async {
     final WriteBatch batch = _firestore.batch();
     final DocumentReference orderRef = _firestore.collection('orders').doc();
@@ -60,6 +63,7 @@ class PosService {
       paymentStatus: 'paid',
       stockUpdated: true,
       validatedAt: Timestamp.now(),
+      cashierId: cashierId,
     );
 
     // Uang tunai yang diterima & kembalian (khusus pembayaran 'cash') —
@@ -91,6 +95,7 @@ class PosService {
     required double totalDiscount,
     required String kasir,
     Customer? customer,
+    String? cashierId,
   }) async {
     final DocumentReference orderRef = _firestore.collection('orders').doc();
 
@@ -105,6 +110,7 @@ class PosService {
       status: 'pending',
       paymentStatus: 'pending_payment',
       stockUpdated: false,
+      cashierId: cashierId,
     );
 
     await orderRef.set(newOrder.toFirestore());
@@ -142,6 +148,7 @@ class PosService {
     required String paymentStatus,
     required bool stockUpdated,
     Timestamp? validatedAt,
+    String? cashierId,
   }) {
     final List<Map<String, dynamic>> productsData = items
         .map((item) => {
@@ -187,6 +194,7 @@ class PosService {
       paymentStatus: paymentStatus,
       stockUpdated: stockUpdated,
       validatedAt: validatedAt,
+      cashierId: cashierId,
       shippingMethod: 'Ambil di Toko',
       shippingFee: 0,
     );

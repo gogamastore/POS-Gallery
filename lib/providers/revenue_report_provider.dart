@@ -9,6 +9,17 @@ import 'sales_report_provider.dart' show reportServiceProvider;
 // Rentang cepat untuk laporan pendapatan.
 enum RevenueFilterType { today, yesterday, last7days, thisMonth, custom }
 
+/// Filter kanal penjualan (meniru Laporan Penjualan). 'all' = default.
+enum RevenueSourceFilter { all, pos, marketplace }
+
+/// Opsi kasir untuk dropdown filter (dibangun dari order yang punya cashierId).
+@immutable
+class CashierOption {
+  final String id;
+  final String name;
+  const CashierOption(this.id, this.name);
+}
+
 /// Rincian pendapatan per metode pembayaran. Menggabungkan POS + Marketplace:
 ///  • cash     ← 'cash' (POS tunai) + 'cod' (marketplace bayar di tempat)
 ///  • transfer ← 'bank_transfer'
@@ -113,6 +124,9 @@ class RevenueReportState {
   final bool isLoading;
   final String? errorMessage;
   final RevenueFilterType activeFilter;
+  final RevenueSourceFilter sourceFilter;
+  final String? cashierFilter; // cashierId; null = semua kasir
+  final List<CashierOption> cashiers;
 
   const RevenueReportState({
     this.selectedDateRange,
@@ -123,6 +137,9 @@ class RevenueReportState {
     this.isLoading = false,
     this.errorMessage,
     this.activeFilter = RevenueFilterType.thisMonth,
+    this.sourceFilter = RevenueSourceFilter.all,
+    this.cashierFilter,
+    this.cashiers = const [],
   });
 
   RevenueReportState copyWith({
@@ -134,6 +151,10 @@ class RevenueReportState {
     bool? isLoading,
     String? errorMessage,
     RevenueFilterType? activeFilter,
+    RevenueSourceFilter? sourceFilter,
+    String? cashierFilter,
+    bool clearCashierFilter = false,
+    List<CashierOption>? cashiers,
   }) {
     return RevenueReportState(
       selectedDateRange: selectedDateRange ?? this.selectedDateRange,
@@ -144,6 +165,10 @@ class RevenueReportState {
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage,
       activeFilter: activeFilter ?? this.activeFilter,
+      sourceFilter: sourceFilter ?? this.sourceFilter,
+      cashierFilter:
+          clearCashierFilter ? null : (cashierFilter ?? this.cashierFilter),
+      cashiers: cashiers ?? this.cashiers,
     );
   }
 }
@@ -153,9 +178,26 @@ class RevenueReportNotifier extends StateNotifier<RevenueReportState> {
 
   RevenueReportNotifier(this._ref) : super(const RevenueReportState());
 
+  /// Hasil query mentah (sebelum filter kanal/kasir). Disimpan agar ganti
+  /// filter tidak perlu query ulang ke Firestore.
+  List<app_order.Order> _rawOrders = [];
+
   void setDateRange(DateTimeRange dateRange) {
     state = state.copyWith(
         selectedDateRange: dateRange, activeFilter: RevenueFilterType.custom);
+  }
+
+  void setSourceFilter(RevenueSourceFilter source) {
+    state = state.copyWith(sourceFilter: source, errorMessage: null);
+    _applyAndAggregate();
+  }
+
+  void setCashierFilter(String? cashierId) {
+    state = state.copyWith(
+        cashierFilter: cashierId,
+        clearCashierFilter: cashierId == null,
+        errorMessage: null);
+    _applyAndAggregate();
   }
 
   void setFilter(RevenueFilterType filter) {
@@ -206,45 +248,35 @@ class RevenueReportNotifier extends StateNotifier<RevenueReportState> {
             endDate: state.selectedDateRange!.end,
           );
 
-      // Kelompokkan per hari (pakai validatedAt → fallback date), hitung total,
-      // jumlah transaksi, dan rincian per metode bayar.
-      final Map<DateTime, _DayAccumulator> byDay = {};
-      double totalRevenue = 0;
-      PaymentBreakdown totalBreakdown = const PaymentBreakdown();
+      _rawOrders = orders;
 
-      for (final app_order.Order order in orders) {
-        final Timestamp ts = order.validatedAt ?? order.date;
-        final d = ts.toDate();
-        final dayKey = DateTime(d.year, d.month, d.day);
-        final amount = order.total.toDouble();
-
-        final acc = byDay.putIfAbsent(dayKey, () => _DayAccumulator());
-        acc.total += amount;
-        acc.count += 1;
-        acc.breakdown = acc.breakdown.addOrder(order.paymentMethod, amount);
-
-        totalRevenue += amount;
-        totalBreakdown = totalBreakdown.addOrder(order.paymentMethod, amount);
+      // Bangun daftar kasir dari order yang punya cashierId (tampilkan nama
+      // kasir bila ada, fallback ke id).
+      final Map<String, String> cashierMap = {};
+      for (final o in orders) {
+        final cid = o.cashierId;
+        if (cid != null && cid.isNotEmpty) {
+          cashierMap.putIfAbsent(
+              cid,
+              () => (o.kasir.trim().isNotEmpty && o.kasir != 'N/A')
+                  ? o.kasir
+                  : cid);
+        }
       }
-
-      final daily = byDay.entries
-          .map((e) => DailyRevenue(
-                date: e.key,
-                total: e.value.total,
-                orderCount: e.value.count,
-                breakdown: e.value.breakdown,
-              ))
+      final cashiers = cashierMap.entries
+          .map((e) => CashierOption(e.key, e.value))
           .toList()
-        ..sort((a, b) => b.date.compareTo(a.date)); // terbaru dulu
+        ..sort((a, b) =>
+            a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+      // Pertahankan pilihan kasir bila masih ada di rentang baru; jika tidak,
+      // reset ke "Semua".
+      final keepCashier = state.cashierFilter != null &&
+          cashiers.any((c) => c.id == state.cashierFilter);
       state = state.copyWith(
-        dailyData: daily,
-        totalRevenue: totalRevenue,
-        totalTransactions: orders.length,
-        totalBreakdown: totalBreakdown,
-        isLoading: false,
-        errorMessage: null,
-      );
+          cashiers: cashiers, clearCashierFilter: !keepCashier);
+
+      _applyAndAggregate();
     } on FirebaseException catch (e) {
       if (e.code == 'failed-precondition' && e.message != null) {
         final urlMatch = RegExp(
@@ -268,6 +300,66 @@ class RevenueReportNotifier extends StateNotifier<RevenueReportState> {
       state = state.copyWith(
           errorMessage: 'Terjadi error: ${e.toString()}', isLoading: false);
     }
+  }
+
+  /// Terapkan filter kanal (source) + kasir ke [_rawOrders], lalu agregasi
+  /// per hari. Tidak query ulang ke Firestore.
+  void _applyAndAggregate() {
+    final src = state.sourceFilter;
+    final cashier = state.cashierFilter;
+
+    final filtered = _rawOrders.where((o) {
+      switch (src) {
+        case RevenueSourceFilter.pos:
+          if (o.source != 'pos') return false;
+          break;
+        case RevenueSourceFilter.marketplace:
+          if (o.source != 'marketplace') return false;
+          break;
+        case RevenueSourceFilter.all:
+          break;
+      }
+      if (cashier != null && o.cashierId != cashier) return false;
+      return true;
+    }).toList();
+
+    final Map<DateTime, _DayAccumulator> byDay = {};
+    double totalRevenue = 0;
+    PaymentBreakdown totalBreakdown = const PaymentBreakdown();
+
+    for (final app_order.Order order in filtered) {
+      final Timestamp ts = order.validatedAt ?? order.date;
+      final d = ts.toDate();
+      final dayKey = DateTime(d.year, d.month, d.day);
+      final amount = order.total.toDouble();
+
+      final acc = byDay.putIfAbsent(dayKey, () => _DayAccumulator());
+      acc.total += amount;
+      acc.count += 1;
+      acc.breakdown = acc.breakdown.addOrder(order.paymentMethod, amount);
+
+      totalRevenue += amount;
+      totalBreakdown = totalBreakdown.addOrder(order.paymentMethod, amount);
+    }
+
+    final daily = byDay.entries
+        .map((e) => DailyRevenue(
+              date: e.key,
+              total: e.value.total,
+              orderCount: e.value.count,
+              breakdown: e.value.breakdown,
+            ))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date)); // terbaru dulu
+
+    state = state.copyWith(
+      dailyData: daily,
+      totalRevenue: totalRevenue,
+      totalTransactions: filtered.length,
+      totalBreakdown: totalBreakdown,
+      isLoading: false,
+      errorMessage: null,
+    );
   }
 }
 

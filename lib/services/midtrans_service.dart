@@ -18,9 +18,12 @@ class MidtransService {
   /// Membuat transaksi Snap untuk pesanan dan mengembalikan URL halaman
   /// pembayarannya. Melempar [MidtransException] bila gagal — penelepon
   /// cukup menampilkan pesannya.
-  Future<String> createSnapTransaction(String orderId) async {
-    final data =
-        await _call('createMidtransTransaction', {'orderId': orderId});
+  Future<String> createSnapTransaction(String orderId,
+      {bool qrisOnly = false}) async {
+    final data = await _call('createMidtransTransaction', {
+      'orderId': orderId,
+      if (qrisOnly) 'qrisOnly': true,
+    });
     return data['redirectUrl'] as String;
   }
 

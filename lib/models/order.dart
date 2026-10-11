@@ -24,8 +24,8 @@ class Order {
   final num total;
   final num totalDiscount;
   final num? shippingFee;
-
-  // Biaya tambahan pesanan marketplace (null/0 pada pesanan POS).
+  /// Biaya admin & layanan — hanya ada pada pesanan MARKETPLACE (ditulis oleh
+  /// checkout web/app pembeli). Null untuk pesanan POS.
   final num? adminFee;
   final num? serviceFee;
 
@@ -36,6 +36,9 @@ class Order {
   // Status & Tracking
   final String status;
   final String kasir;
+  /// UID kasir/akun yang memproses transaksi POS (untuk filter per-kasir &
+  /// rekonsiliasi shift). Null untuk pesanan marketplace & data lama.
+  final String? cashierId;
   /// Kanal penjualan: 'pos' (kasir) atau 'marketplace'. Null untuk data lama.
   final String? source;
   final bool stockUpdated;
@@ -67,6 +70,7 @@ class Order {
     required this.paymentStatus,
     required this.status,
     required this.kasir,
+    this.cashierId,
     this.source,
     required this.stockUpdated,
     this.shippingMethod,
@@ -75,14 +79,9 @@ class Order {
     this.grossProfit = 0.0,
   });
 
-  factory Order.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) =>
-      Order.fromMap(doc.id, doc.data()!);
+  factory Order.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
 
-  /// Map mentah dokumen `orders/{id}` -> [Order]. Dipakai juga oleh layar
-  /// marketplace yang membaca dokumennya lewat StreamBuilder. Pesanan
-  /// marketplace ditulis checkout web/app pembeli, jadi sebagian field POS
-  /// bisa absen — semua pembacaan dibuat toleran.
-  factory Order.fromMap(String id, Map<String, dynamic> data) {
     // PERBAIKAN: Menghilangkan underscore dari nama fungsi lokal
     Timestamp? parseTimestamp(dynamic value) {
       if (value is Timestamp) return value;
@@ -90,28 +89,21 @@ class Order {
       return null;
     }
 
-    final details = data['customerDetails'] as Map<String, dynamic>?;
-
     return Order(
-      id: id,
-      // Marketplace kadang hanya punya `createdAt`; jangan sampai gagal parse.
-      date: parseTimestamp(data['date']) ??
-          parseTimestamp(data['createdAt']) ??
-          Timestamp.now(),
+      id: doc.id,
+      date: data['date'] as Timestamp,
       createdAt: parseTimestamp(data['created_at']), // Menggunakan fungsi yang sudah diganti nama
       updatedAt: data['updatedAt'] as Timestamp?,
       validatedAt: data['validatedAt'] as Timestamp?,
       shippedAt: data['shippedAt'] as Timestamp?,
-      customer: data['customer'] as String? ?? details?['name'] as String?,
+      customer: data['customer'] as String?,
       customerId: data['customerId'] as String?,
-      customerDetails: details,
+      customerDetails: data['customerDetails'] as Map<String, dynamic>?,
       products: List<Map<String, dynamic>>.from(data['products'] ?? []),
       productIds: List<String>.from(data['productIds'] ?? []),
       subtotal: data['subtotal'] as num? ?? 0,
       total: data['total'] as num? ?? 0,
-      // Marketplace menulis potongannya sebagai `voucherDiscount`.
-      totalDiscount:
-          data['totalDiscount'] as num? ?? data['voucherDiscount'] as num? ?? 0,
+      totalDiscount: data['totalDiscount'] as num? ?? 0,
       shippingFee: data['shippingFee'] as num?,
       adminFee: data['adminFee'] as num?,
       serviceFee: data['serviceFee'] as num?,
@@ -119,6 +111,7 @@ class Order {
       paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
       status: data['status'] as String? ?? 'N/A',
       kasir: data['kasir'] as String? ?? 'N/A',
+      cashierId: data['cashierId'] as String?,
       source: data['source'] as String?,
       stockUpdated: data['stockUpdated'] as bool? ?? false,
       shippingMethod: data['shippingMethod'] as String?,
@@ -154,6 +147,7 @@ class Order {
       paymentStatus: paymentStatus,
       status: status,
       kasir: kasir,
+      cashierId: cashierId,
       source: source,
       stockUpdated: stockUpdated,
       shippingMethod: shippingMethod,
@@ -191,6 +185,7 @@ class Order {
       'paymentProofUrl': "",
       'status': status,
       'kasir': kasir,
+      'cashierId': cashierId,
       'stockUpdated': stockUpdated,
       'shippingMethod': shippingMethod,
     };

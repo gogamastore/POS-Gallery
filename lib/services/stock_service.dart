@@ -52,14 +52,12 @@ class StockService {
     final product = Product.fromFirestore(productDoc);
     final int currentStock = product.stock;
 
-    final salesFuture = _getSalesMovements(productId);
-    final cancellationsFuture = _getCancellationMovements(productId);
+    final ordersFuture = _getOrderMovements(productId);
     final purchasesFuture = _getPurchaseMovements(productId);
     final adjustmentsFuture = _getAdjustmentMovements(productId);
 
     final results = await Future.wait([
-      salesFuture,
-      cancellationsFuture,
+      ordersFuture,
       purchasesFuture,
       adjustmentsFuture,
     ]);
@@ -80,12 +78,17 @@ class StockService {
     return calculatedMovements;
   }
 
-  // --- PERBAIKAN UTAMA DI FUNGSI INI ---
-  Future<List<StockMovement>> _getSalesMovements(String productId) async {
-    // Menghapus `where('productIds', ...)` dan memfilter berdasarkan status 'success' saja.
+  // --- DISAMAKAN DENGAN LAPORAN ARUS STOK WEB ---
+  // Web mencatat SETIAP pesanan yang BUKAN dibatalkan sebagai stok KELUAR
+  // (termasuk belum bayar / pending_payment / COD, dan pengiriman "ambil di
+  // toko"), lalu pesanan yang dibatalkan sebagai stok MASUK (dikembalikan).
+  // Sebelumnya Flutter hanya membaca status 'success' sehingga banyak
+  // pergerakan stok (mis. pesanan marketplace belum bayar / ambil di toko)
+  // tidak tercatat. Satu kali baca koleksi `orders`, lalu dipisah jadi
+  // penjualan vs pembatalan.
+  Future<List<StockMovement>> _getOrderMovements(String productId) async {
     final querySnapshot = await _db
         .collection('orders')
-        .where('status', isEqualTo: 'success')
         .orderBy('date', descending: true)
         .get();
 
@@ -94,56 +97,45 @@ class StockService {
       final data = doc.data();
       if (data['date'] == null || data['products'] == null) continue;
 
+      final bool cancelled = _isCancelledStatus(data['status']);
+      final String? source = data['source'] as String?;
       final List<dynamic> productList = data['products'];
       for (var productData in productList) {
-        if (productData is Map<String, dynamic> && productData['productId'] == productId) {
-          final int quantity = (productData['quantity'] as num?)?.toInt() ?? 0;
-          if (quantity > 0) {
-            movements.add(StockMovement(
-              date: (data['date'] as Timestamp).toDate(),
-              description: 'Penjualan - Order #${doc.id.substring(0, 6)}',
-              change: -quantity,
-              type: StockMovementType.sale,
-              referenceId: doc.id,
-            ));
-          }
+        if (productData is! Map<String, dynamic>) continue;
+        if (productData['productId'] != productId) continue;
+        final int quantity = (productData['quantity'] as num?)?.toInt() ?? 0;
+        if (quantity <= 0) continue;
+
+        if (cancelled) {
+          movements.add(StockMovement(
+            date: (data['date'] as Timestamp).toDate(),
+            description: 'Pembatalan - Order #${doc.id.substring(0, 6)}',
+            change: quantity, // stok kembali (masuk)
+            type: StockMovementType.cancellation,
+            referenceId: doc.id,
+            source: source,
+          ));
+        } else {
+          movements.add(StockMovement(
+            date: (data['date'] as Timestamp).toDate(),
+            description: 'Penjualan - Order #${doc.id.substring(0, 6)}',
+            change: -quantity, // stok keluar
+            type: StockMovementType.sale,
+            referenceId: doc.id,
+            source: source,
+          ));
         }
       }
     }
     return movements;
   }
 
-  // --- PERBAIKAN UTAMA DI FUNGSI INI ---
-  Future<List<StockMovement>> _getCancellationMovements(String productId) async {
-    // Menghapus `where('productIds', ...)` dan memfilter berdasarkan status 'cancelled'.
-    final querySnapshot = await _db
-        .collection('orders')
-        .where('status', isEqualTo: 'cancelled')
-        .orderBy('date', descending: true)
-        .get();
-
-    final List<StockMovement> movements = [];
-    for (var doc in querySnapshot.docs) {
-      final data = doc.data();
-      if (data['date'] == null || data['products'] == null) continue;
-
-      final List<dynamic> productList = data['products'];
-      for (var productData in productList) {
-        if (productData is Map<String, dynamic> && productData['productId'] == productId) {
-          final int quantity = (productData['quantity'] as num?)?.toInt() ?? 0;
-          if (quantity > 0) {
-            movements.add(StockMovement(
-              date: (data['date'] as Timestamp).toDate(),
-              description: 'Pembatalan - Order #${doc.id.substring(0, 6)}',
-              change: quantity, 
-              type: StockMovementType.cancellation,
-              referenceId: doc.id,
-            ));
-          }
-        }
-      }
-    }
-    return movements;
+  /// Pesanan dianggap dibatalkan bila statusnya "cancelled"/"Cancelled"/
+  /// "dibatalkan" (casing campur: marketplace memakai "Cancelled", POS
+  /// memakai "cancelled"). Selain itu dihitung sebagai stok keluar.
+  bool _isCancelledStatus(dynamic status) {
+    final s = (status is String) ? status.toLowerCase().trim() : '';
+    return s == 'cancelled' || s == 'canceled' || s == 'dibatalkan';
   }
 
   Future<List<StockMovement>> _getPurchaseMovements(String productId) async {
