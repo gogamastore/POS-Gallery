@@ -253,7 +253,9 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
                             controller: _tabController,
                             children: [
                               for (var i = 0; i < _tabs.length; i++)
-                                _buildList(_forTab(i, filtered)),
+                                i == 1
+                                    ? _buildToShipTab(_forTab(1, filtered))
+                                    : _buildList(_forTab(i, filtered)),
                             ],
                           ),
                         ),
@@ -261,6 +263,76 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
                     ),
         );
       },
+    );
+  }
+
+  // Tab "Perlu Dikirim": ringkasan pendapatan (tanpa ongkir) + total ongkir
+  // dari SEMUA pesanan di tab ini tanpa melihat status bayar — pengiriman
+  // Biteship sudah pasti dibayar di muka, sedangkan "Ambil di Tempat" tetap
+  // dihitung meski COD (kas ditagih saat barang diambil).
+  Widget _buildToShipTab(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    double revenue = 0;
+    double shipping = 0;
+    for (final doc in docs) {
+      final d = doc.data();
+      final total = (d['total'] as num?)?.toDouble() ?? 0;
+      final ship = (d['shippingFee'] as num?)?.toDouble() ?? 0;
+      shipping += ship;
+      final rev = total - ship;
+      revenue += rev < 0 ? 0 : rev;
+    }
+    final currency =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final theme = Theme.of(context);
+
+    Widget card(String title, String sub, String value, IconData icon, Color color) {
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(icon, size: 16, color: color),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(title,
+                      style: TextStyle(fontSize: 11, color: Colors.grey[700], fontWeight: FontWeight.w600)),
+                ),
+              ]),
+              const SizedBox(height: 2),
+              Text(sub, style: TextStyle(fontSize: 9, color: Colors.grey[500])),
+              const SizedBox(height: 4),
+              Text(value,
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: Row(
+            children: [
+              card('Pendapatan', '(semua pesanan, tanpa ongkir)',
+                  currency.format(revenue), Icons.payments, theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              card('Total Ongkir', '(semua pesanan perlu dikirim)',
+                  currency.format(shipping), Icons.local_shipping, Colors.cyan[700]!),
+            ],
+          ),
+        ),
+        Expanded(child: _buildList(docs)),
+      ],
     );
   }
 

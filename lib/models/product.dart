@@ -25,6 +25,7 @@ class Product {
   final String? categoryId;
   final double? lastPurchasePrice; // Harga beli terakhir yang spesifik
   final int weightGram; // Berat produk (gram) — untuk ongkir
+  final String? brandId; // Id dokumen `brands` (opsional)
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
 
@@ -40,6 +41,7 @@ class Product {
     this.categoryId,
     this.lastPurchasePrice,
     this.weightGram = 0,
+    this.brandId,
     this.createdAt,
     this.updatedAt,
   });
@@ -57,6 +59,7 @@ class Product {
       'categoryId': categoryId,
       'lastPurchasePrice': lastPurchasePrice,
       'weightGram': weightGram,
+      'brandId': brandId,
       'createdAt': createdAt ?? FieldValue.serverTimestamp(),
       'updatedAt': updatedAt, // Biarkan null saat membuat, Firestore akan mengisinya
     };
@@ -76,6 +79,7 @@ class Product {
       // Fallback: Gunakan purchasePrice jika lastPurchasePrice tidak ada
       lastPurchasePrice: parsePrice(map['lastPurchasePrice'] ?? map['purchasePrice']),
       weightGram: (map['weightGram'] as num?)?.toInt() ?? 0,
+      brandId: map['brandId'] as String?,
       createdAt: map['createdAt'] as Timestamp?,
       updatedAt: map['updatedAt'] as Timestamp?,
     );
@@ -96,6 +100,7 @@ class Product {
       // Fallback: Gunakan purchasePrice jika lastPurchasePrice tidak ada
       lastPurchasePrice: parsePrice(data['lastPurchasePrice'] ?? data['purchasePrice']),
       weightGram: (data['weightGram'] as num?)?.toInt() ?? 0,
+      brandId: data['brandId'] as String?,
       createdAt: data['createdAt'] as Timestamp?,
       updatedAt: data['updatedAt'] as Timestamp?,
     );
@@ -113,6 +118,7 @@ class Product {
     String? categoryId,
     double? lastPurchasePrice,
     int? weightGram,
+    String? brandId,
     Timestamp? createdAt,
     Timestamp? updatedAt,
   }) {
@@ -128,6 +134,7 @@ class Product {
       categoryId: categoryId ?? this.categoryId,
       lastPurchasePrice: lastPurchasePrice ?? this.lastPurchasePrice,
       weightGram: weightGram ?? this.weightGram,
+      brandId: brandId ?? this.brandId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

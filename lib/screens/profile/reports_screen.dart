@@ -4,6 +4,7 @@ import 'package:ionicons/ionicons.dart';
 import '../reports/customer_report_screen.dart';
 import '../reports/admin_fees_report_screen.dart';
 import '../reports/operational_costs_screen.dart';
+import '../reports/shipping_fees_report_screen.dart';
 import '../reports/revenue_report_screen.dart';
 import '../reports/product_sales_report_screen.dart';
 import '../reports/cashdrawer_report_screen.dart';
@@ -69,6 +70,19 @@ class ReportsScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                     builder: (context) => const AdminFeesReportScreen()),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.cube_outline,
+            title: 'Laporan Rincian Biaya Pengiriman',
+            subtitle: 'Total ongkir pesanan pembeli yang divalidasi per hari.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const ShippingFeesReportScreen()),
               );
             },
           ),

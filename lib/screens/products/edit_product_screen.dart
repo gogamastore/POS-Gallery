@@ -8,6 +8,7 @@ import 'package:ionicons/ionicons.dart';
 
 import '../../models/product.dart';
 import '../../models/product_category.dart';
+import '../../providers/brand_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/product_provider.dart';
 import 'barcode_scanner_screen.dart';
@@ -30,6 +31,7 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
   late TextEditingController _descriptionController;
 
   String? _selectedCategoryId;
+  String? _selectedBrandId;
   Uint8List? _imageBytes;
   String? _imageName;
   bool _isSaving = false;
@@ -43,6 +45,7 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
     _weightController = TextEditingController(text: widget.product.weightGram.toString());
     _descriptionController = TextEditingController(text: widget.product.description);
     _selectedCategoryId = widget.product.categoryId;
+    _selectedBrandId = widget.product.brandId;
   }
 
   @override
@@ -122,6 +125,7 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
         weightGram: int.tryParse(_weightController.text) ?? 0,
         description: _descriptionController.text,
         categoryId: _selectedCategoryId,
+        brandId: _selectedBrandId,
         image: imageUrl,
       );
 
@@ -230,6 +234,8 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
               // --- AKHIR PERUBAHAN ---
               const SizedBox(height: 16),
               _buildCategoryDropdown(),
+              const SizedBox(height: 16),
+              _buildBrandDropdown(),
               const SizedBox(height: 16),
               _buildPriceFields(currencyFormatter),
               const SizedBox(height: 16),
@@ -388,6 +394,84 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Text('Gagal memuat kategori: $err'),
+    );
+  }
+
+  Widget _buildBrandDropdown() {
+    final brandsAsync = ref.watch(brandsStreamProvider);
+    return brandsAsync.when(
+      data: (brands) {
+        if (_selectedBrandId != null && !brands.any((b) => b.id == _selectedBrandId)) {
+          _selectedBrandId = null;
+        }
+        return DropdownButtonFormField<String>(
+          initialValue: _selectedBrandId,
+          hint: const Text('Pilih Brand'),
+          isExpanded: true,
+          items: brands.map((Brand brand) {
+            return DropdownMenuItem<String>(
+              value: brand.id,
+              child: Text(brand.name),
+            );
+          }).toList(),
+          onChanged: (value) => setState(() => _selectedBrandId = value),
+          decoration: InputDecoration(
+            labelText: 'Brand (Opsional)',
+            border: const OutlineInputBorder(),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: _showAddBrandDialog,
+              tooltip: 'Tambah Brand Baru',
+            ),
+          ),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, stack) => Text('Gagal memuat brand: $err'),
+    );
+  }
+
+  void _showAddBrandDialog() {
+    final brandNameController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        final navigator = Navigator.of(context);
+        final scaffoldMessenger = ScaffoldMessenger.of(context);
+        return AlertDialog(
+          title: const Text('Tambah Brand Baru'),
+          content: TextField(
+            controller: brandNameController,
+            decoration: const InputDecoration(hintText: "Nama Brand"),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(onPressed: () => navigator.pop(), child: const Text('Batal')),
+            TextButton(
+              child: const Text('Tambah'),
+              onPressed: () async {
+                final name = brandNameController.text;
+                if (name.isNotEmpty) {
+                  try {
+                    final newId = await ref.read(addBrandProvider(name).future);
+                    if (!mounted) return;
+                    setState(() => _selectedBrandId = newId);
+                    navigator.pop();
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(content: Text('Brand "$name" berhasil ditambahkan.')),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(content: Text('Gagal menambah brand: $e')),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
