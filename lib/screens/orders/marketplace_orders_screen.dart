@@ -39,6 +39,7 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
     'Dikirim',
     'Selesai',
     'Dibatalkan',
+    'Pengembalian',
   ];
 
   @override
@@ -86,7 +87,13 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
       ['delivered', 'selesai']
           .contains((d['status'] as String? ?? '').toLowerCase());
 
+  // Pesanan dikembalikan kurir (status Biteship mengandung "return",
+  // mis. 'returned') — dipisah ke tab "Pengembalian".
+  bool _isReturned(Map<String, dynamic> d) =>
+      (d['biteshipStatus'] as String? ?? '').toLowerCase().contains('return');
+
   bool _isCancelled(Map<String, dynamic> d) {
+    if (_isReturned(d)) return false; // retur → tab "Pengembalian", bukan ini
     final s = (d['status'] as String? ?? '').toLowerCase();
     final pay = (d['paymentStatus'] as String? ?? '').toLowerCase();
     return ['cancelled', 'failed'].contains(pay) ||
@@ -102,7 +109,8 @@ class _MarketplaceOrdersScreenState extends State<MarketplaceOrdersScreen>
       1 => _isToShip,
       2 => _isShipped,
       3 => _isDelivered,
-      _ => _isCancelled,
+      4 => _isCancelled,
+      _ => _isReturned,
     };
     return all.where((d) => test(d.data())).toList();
   }
@@ -455,6 +463,10 @@ class _OrderCard extends StatelessWidget {
         : '-';
 
     final statusLower = status.toLowerCase();
+    // Retur dari kurir (Biteship) → tampilkan badge "Dikembalikan" (amber),
+    // bukan "Dibatalkan".
+    final isReturned =
+        (data['biteshipStatus'] as String? ?? '').toLowerCase().contains('return');
     final courierCode = data['biteshipCourierCode'] as String?;
     final isCourier = courierCode != null && courierCode.isNotEmpty;
     // Di status Processing (Perlu Dikirim): kurir → Proses Pesanan (Biteship),
@@ -481,7 +493,23 @@ class _OrderCard extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                         overflow: TextOverflow.ellipsis),
                   ),
-                  OrderStatusBadge(status: status),
+                  if (isReturned)
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade100,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.amber.shade400),
+                      ),
+                      child: Text('Dikembalikan',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.amber.shade900)),
+                    )
+                  else
+                    OrderStatusBadge(status: status),
                 ],
               ),
               const SizedBox(height: 4),

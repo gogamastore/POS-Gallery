@@ -29,6 +29,61 @@ class CashdrawerReportNotifier extends StateNotifier<RevenueReportState> {
 
   List<app_order.Order> _rawOrders = [];
 
+  /// Pengeluaran operasional & shift (modal awal) mentah untuk rentang ini.
+  List<({DateTime date, String? cashierId, double amount})> _rawExpenses = [];
+  List<
+      ({
+        DateTime date,
+        DateTime? endTime,
+        String? cashierId,
+        double startingCash
+      })> _rawShifts = [];
+
+  Future<List<({DateTime date, String? cashierId, double amount})>>
+      _fetchExpenses(DateTime start, DateTime end) async {
+    final endInclusive =
+        DateTime(end.year, end.month, end.day, 23, 59, 59, 999);
+    final snap = await FirebaseFirestore.instance
+        .collection('operational_expenses')
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endInclusive))
+        .get();
+    return snap.docs.map((d) {
+      final data = d.data();
+      return (
+        date: (data['date'] as Timestamp?)?.toDate() ?? start,
+        cashierId: data['cashierId'] as String?,
+        amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
+      );
+    }).toList();
+  }
+
+  Future<
+      List<
+          ({
+            DateTime date,
+            DateTime? endTime,
+            String? cashierId,
+            double startingCash
+          })>> _fetchShifts(DateTime start, DateTime end) async {
+    final endInclusive =
+        DateTime(end.year, end.month, end.day, 23, 59, 59, 999);
+    final snap = await FirebaseFirestore.instance
+        .collection('cashdrawers')
+        .where('startTime', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('startTime', isLessThanOrEqualTo: Timestamp.fromDate(endInclusive))
+        .get();
+    return snap.docs.map((d) {
+      final data = d.data();
+      return (
+        date: (data['startTime'] as Timestamp?)?.toDate() ?? start,
+        endTime: (data['endTime'] as Timestamp?)?.toDate(),
+        cashierId: data['cashierId'] as String?,
+        startingCash: (data['startingCash'] as num?)?.toDouble() ?? 0.0,
+      );
+    }).toList();
+  }
+
   /// Transaksi yang masuk laci kas: POS, atau marketplace "Ambil di Toko".
   static bool _isDrawerOrder(app_order.Order o) {
     if (o.source == 'pos') return true;
@@ -106,6 +161,15 @@ class CashdrawerReportNotifier extends StateNotifier<RevenueReportState> {
 
       // Pra-filter: hanya transaksi yang masuk laci kas.
       _rawOrders = orders.where(_isDrawerOrder).toList();
+      try {
+        _rawExpenses = await _fetchExpenses(
+            state.selectedDateRange!.start, state.selectedDateRange!.end);
+        _rawShifts = await _fetchShifts(
+            state.selectedDateRange!.start, state.selectedDateRange!.end);
+      } catch (_) {
+        _rawExpenses = [];
+        _rawShifts = [];
+      }
 
       final Map<String, String> cashierMap = {};
       for (final o in _rawOrders) {
@@ -193,12 +257,50 @@ class CashdrawerReportNotifier extends StateNotifier<RevenueReportState> {
       totalBreakdown = totalBreakdown.addOrder(order.paymentMethod, amount);
     }
 
+    // Shift yang relevan (ikut filter kasir).
+    final shifts = _rawShifts
+        .where((s) => cashier == null || s.cashierId == cashier)
+        .toList();
+
+    // Modal awal (startingCash shift) — total + per hari (hari shift dibuka).
+    double startingCash = 0;
+    final Map<DateTime, double> startByDay = {};
+    for (final s in shifts) {
+      startingCash += s.startingCash;
+      final dk = DateTime(s.date.year, s.date.month, s.date.day);
+      startByDay[dk] = (startByDay[dk] ?? 0) + s.startingCash;
+    }
+
+    // PENGELUARAN hanya dihitung bila terjadi SELAMA jam shift aktif
+    // (waktu pengeluaran ∈ [shift.start, shift.end]) DAN kasirnya sama. Bila
+    // ada 2 shift bergantian dalam sehari, tiap pengeluaran masuk ke shift yang
+    // benar — shift ke-2 hanya mendapat pengeluaran setelah ia dibuka.
+    // Pengeluaran di luar jam shift tidak dihitung.
+    final rangeEnd = state.selectedDateRange?.end ?? DateTime.now();
+    double totalExpenses = 0;
+    final Map<DateTime, double> expByDay = {};
+    for (final e in _rawExpenses) {
+      if (cashier != null && e.cashierId != cashier) continue;
+      for (final s in shifts) {
+        if (s.cashierId != e.cashierId) continue;
+        final end = s.endTime ?? rangeEnd;
+        if (!e.date.isBefore(s.date) && !e.date.isAfter(end)) {
+          totalExpenses += e.amount;
+          final dk = DateTime(s.date.year, s.date.month, s.date.day);
+          expByDay[dk] = (expByDay[dk] ?? 0) + e.amount;
+          break; // satu pengeluaran → satu shift
+        }
+      }
+    }
+
     final daily = byDay.entries
         .map((e) => DailyRevenue(
               date: e.key,
               total: e.value.total,
               orderCount: e.value.count,
               breakdown: e.value.breakdown,
+              startingCash: startByDay[e.key] ?? 0,
+              expenses: expByDay[e.key] ?? 0,
             ))
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
@@ -208,6 +310,8 @@ class CashdrawerReportNotifier extends StateNotifier<RevenueReportState> {
       totalRevenue: totalRevenue,
       totalTransactions: filtered.length,
       totalBreakdown: totalBreakdown,
+      startingCash: startingCash,
+      totalExpenses: totalExpenses,
       isLoading: false,
       errorMessage: null,
     );

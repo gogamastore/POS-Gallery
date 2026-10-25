@@ -7,6 +7,8 @@ import '../../models/product.dart';
 import '../../models/promotion_model.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/promo_provider.dart';
+import '../../providers/brand_provider.dart';
+import '../../providers/category_provider.dart';
 import '../../services/sound_service.dart';
 import '../stock/stock_management_screen.dart';
 import 'add_product_screen.dart';
@@ -162,6 +164,22 @@ class _ProductList extends ConsumerWidget {
     // Memantau data promo
     final promosAsync = ref.watch(promoProvider);
 
+    // Peta untuk menampilkan nama Kategori & Brand (tanpa memblokir render
+    // bila masih loading — pakai valueOrNull).
+    final brandMap = {
+      for (final b in (ref.watch(brandsStreamProvider).valueOrNull ?? <Brand>[]))
+        b.id: b.name,
+    };
+    final categoryMap = {
+      for (final c
+          in (ref.watch(categoriesStreamProvider).valueOrNull ?? const []))
+        c.id: c.name,
+    };
+
+    // Kategori & Brand hanya ditampilkan pada layar lebar (tablet/desktop);
+    // pada mobile disembunyikan agar baris tetap ringkas.
+    final showMeta = MediaQuery.of(context).size.width >= 600;
+
     return promosAsync.when(
       // Jika data promo berhasil dimuat, bangun daftar produk
       data: (promotions) {
@@ -221,13 +239,45 @@ class _ProductList extends ConsumerWidget {
                     : null,
               ),
               title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  priceWidget, // Tampilkan widget harga yang sudah disiapkan
-                  if (product.sku != null && product.sku!.isNotEmpty)
-                    Text('SKU: ${product.sku}', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-                ],
+              subtitle: Builder(
+                builder: (context) {
+                  // Nama kategori: utamakan field `category` (categoryName),
+                  // fallback ke peta categoryId → nama.
+                  final categoryName = (product.categoryName != null &&
+                          product.categoryName!.isNotEmpty)
+                      ? product.categoryName!
+                      : (product.categoryId != null
+                          ? (categoryMap[product.categoryId] ?? '')
+                          : '');
+                  final brandName = (product.brandId != null &&
+                          product.brandId!.isNotEmpty)
+                      ? (brandMap[product.brandId] ?? '')
+                      : '';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      priceWidget,
+                      if (product.sku != null && product.sku!.isNotEmpty)
+                        Text('SKU: ${product.sku}',
+                            style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                      if (showMeta) ...[
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            if (categoryName.isNotEmpty)
+                              _infoChip(categoryName, Colors.blueGrey),
+                            brandName.isNotEmpty
+                                ? _infoChip(brandName, Colors.indigo)
+                                : _infoChip('Belum ada brand', Colors.amber,
+                                    warning: true),
+                          ],
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
               trailing: Text('Stok: ${product.stock}'),
               onTap: () {
@@ -244,6 +294,26 @@ class _ProductList extends ConsumerWidget {
       // Tampilkan loading atau error saat data promo sedang diambil
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Center(child: Text('Gagal memuat data promo: $err')),
+    );
+  }
+
+  // Chip kecil untuk Kategori/Brand pada baris produk (layar lebar).
+  Widget _infoChip(String text, MaterialColor color, {bool warning = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.shade200),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: warning ? FontWeight.w600 : FontWeight.w500,
+          color: warning ? Colors.amber.shade900 : color.shade700,
+        ),
+      ),
     );
   }
 }

@@ -23,6 +23,9 @@ class Product {
   final double? purchasePrice; // Harga Beli (bisa jadi harga rata-rata)
   final String? description;
   final String? categoryId;
+  /// Nama kategori. Disimpan di field `category` agar SERAGAM dengan web admin
+  /// & app pembeli (keduanya memfilter katalog berdasarkan NAMA kategori).
+  final String? categoryName;
   final double? lastPurchasePrice; // Harga beli terakhir yang spesifik
   final int weightGram; // Berat produk (gram) — untuk ongkir
   final String? brandId; // Id dokumen `brands` (opsional)
@@ -39,6 +42,7 @@ class Product {
     this.purchasePrice,
     this.description,
     this.categoryId,
+    this.categoryName,
     this.lastPurchasePrice,
     this.weightGram = 0,
     this.brandId,
@@ -57,6 +61,11 @@ class Product {
       'purchasePrice': purchasePrice,
       'description': description,
       'categoryId': categoryId,
+      // Tulis juga NAMA kategori agar produk muncul di app pembeli & web admin
+      // (yang memfilter pakai field `category` = nama). Dilewati bila kosong
+      // supaya tidak menimpa nilai lama dengan null saat edit.
+      if (categoryName != null && categoryName!.isNotEmpty)
+        'category': categoryName,
       'lastPurchasePrice': lastPurchasePrice,
       'weightGram': weightGram,
       'brandId': brandId,
@@ -76,6 +85,7 @@ class Product {
       purchasePrice: parsePrice(map['purchasePrice']),
       description: map['description'] as String?,
       categoryId: map['categoryId'] as String?,
+      categoryName: map['category'] as String?,
       // Fallback: Gunakan purchasePrice jika lastPurchasePrice tidak ada
       lastPurchasePrice: parsePrice(map['lastPurchasePrice'] ?? map['purchasePrice']),
       weightGram: (map['weightGram'] as num?)?.toInt() ?? 0,
@@ -97,6 +107,7 @@ class Product {
       purchasePrice: parsePrice(data['purchasePrice']),
       description: data['description'] as String?,
       categoryId: data['categoryId'] as String?,
+      categoryName: data['category'] as String?,
       // Fallback: Gunakan purchasePrice jika lastPurchasePrice tidak ada
       lastPurchasePrice: parsePrice(data['lastPurchasePrice'] ?? data['purchasePrice']),
       weightGram: (data['weightGram'] as num?)?.toInt() ?? 0,
@@ -116,6 +127,7 @@ class Product {
     double? purchasePrice,
     String? description,
     String? categoryId,
+    String? categoryName,
     double? lastPurchasePrice,
     int? weightGram,
     String? brandId,
@@ -132,6 +144,7 @@ class Product {
       purchasePrice: purchasePrice ?? this.purchasePrice,
       description: description ?? this.description,
       categoryId: categoryId ?? this.categoryId,
+      categoryName: categoryName ?? this.categoryName,
       lastPurchasePrice: lastPurchasePrice ?? this.lastPurchasePrice,
       weightGram: weightGram ?? this.weightGram,
       brandId: brandId ?? this.brandId,

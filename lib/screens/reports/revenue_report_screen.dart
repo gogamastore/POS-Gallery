@@ -216,24 +216,50 @@ class _RevenueReportScreenState extends ConsumerState<RevenueReportScreen> {
   }
 
   Widget _buildSummaryCard(RevenueReportState state) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildMetricCard(
-            'Total Pendapatan',
-            formatter.formatCurrency(state.totalRevenue),
-            Ionicons.cash_outline,
-            color: Colors.green.shade700,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                'Total Pendapatan',
+                formatter.formatCurrency(state.totalRevenue),
+                Ionicons.cash_outline,
+                color: Colors.green.shade700,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMetricCard(
+                'Total Transaksi',
+                '${state.totalTransactions} pesanan',
+                Ionicons.receipt_outline,
+                color: Colors.blue.shade700,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildMetricCard(
-            'Total Transaksi',
-            '${state.totalTransactions} pesanan',
-            Ionicons.receipt_outline,
-            color: Colors.blue.shade700,
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                'Total Pengeluaran',
+                formatter.formatCurrency(state.totalExpenses),
+                Ionicons.trending_down_outline,
+                color: Colors.red.shade600,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMetricCard(
+                'Pendapatan Bersih',
+                formatter.formatCurrency(state.netIncome),
+                Ionicons.wallet_outline,
+                color: Colors.teal.shade800,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -406,6 +432,9 @@ class _RevenueReportScreenState extends ConsumerState<RevenueReportScreen> {
                             color: Colors.green.shade700)),
                   ],
                 ),
+                const Divider(height: 28),
+                _breakdownRow('Pengeluaran', day.expenses,
+                    Ionicons.trending_down_outline),
               ],
             ),
           ),

@@ -118,6 +118,19 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
       if (!mounted) return;
       final newPrice = double.tryParse(_priceController.text) ?? 0.0;
 
+      // Resolusi NAMA kategori dari id terpilih agar ikut disimpan sebagai
+      // `category` (seragam dengan web admin & app pembeli).
+      String? categoryName;
+      final categoryList = ref.read(categoriesStreamProvider).value;
+      if (_selectedCategoryId != null && categoryList != null) {
+        for (final c in categoryList) {
+          if (c.id == _selectedCategoryId) {
+            categoryName = c.name;
+            break;
+          }
+        }
+      }
+
       final updatedProduct = widget.product.copyWith(
         name: _nameController.text,
         sku: _skuController.text,
@@ -125,6 +138,7 @@ class EditProductScreenState extends ConsumerState<EditProductScreen> {
         weightGram: int.tryParse(_weightController.text) ?? 0,
         description: _descriptionController.text,
         categoryId: _selectedCategoryId,
+        categoryName: categoryName,
         brandId: _selectedBrandId,
         image: imageUrl,
       );

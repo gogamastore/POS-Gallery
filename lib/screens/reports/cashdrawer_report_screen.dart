@@ -244,26 +244,94 @@ class _CashdrawerReportScreenState
   }
 
   Widget _buildSummaryCard(RevenueReportState state) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildMetricCard(
-            'Total Masuk Laci',
-            formatter.formatCurrency(state.totalRevenue),
-            Ionicons.cash_outline,
-            color: Colors.green.shade700,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                'Total Penjualan',
+                formatter.formatCurrency(state.totalRevenue),
+                Ionicons.cash_outline,
+                color: Colors.green.shade700,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMetricCard(
+                'Total Transaksi',
+                '${state.totalTransactions} pesanan',
+                Ionicons.receipt_outline,
+                color: Colors.blue.shade700,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildMetricCard(
-            'Total Transaksi',
-            '${state.totalTransactions} pesanan',
-            Ionicons.receipt_outline,
-            color: Colors.blue.shade700,
-          ),
-        ),
+        const SizedBox(height: 12),
+        _buildCashdrawerReconCard(state),
       ],
+    );
+  }
+
+  /// Rincian Cashdrawer: Modal Awal + Pemasukan Tunai − Pengeluaran =
+  /// Modal Akhir. QRIS & Transfer TIDAK ikut (bukan uang tunai di laci).
+  Widget _buildCashdrawerReconCard(RevenueReportState state) {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.account_balance_wallet_outlined,
+                    size: 18, color: Colors.teal.shade700),
+                const SizedBox(width: 8),
+                const Text('Rincian Cashdrawer',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _reconRow('Modal Awal (Cash Awal)', state.startingCash),
+            _reconRow('Pemasukan Tunai (Penjualan)', state.cashIncome,
+                sign: '+'),
+            _reconRow('Pengeluaran', state.totalExpenses,
+                sign: '−', color: Colors.red.shade600),
+            const Divider(height: 20),
+            _reconRow('Modal Akhir (Ending Cash)', state.endingCash,
+                bold: true, color: Colors.teal.shade800),
+            const SizedBox(height: 8),
+            Text(
+              'QRIS & Transfer tidak termasuk Modal Akhir (bukan uang tunai di laci) — hanya masuk Total Penjualan.',
+              style: TextStyle(fontSize: 11.5, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _reconRow(String label, double amount,
+      {String? sign, bool bold = false, Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(sign != null ? '$sign $label' : label,
+              style: TextStyle(
+                  fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+                  fontSize: bold ? 15 : 13.5)),
+          Text(formatter.formatCurrency(amount),
+              style: TextStyle(
+                  fontWeight: bold ? FontWeight.bold : FontWeight.w600,
+                  fontSize: bold ? 16 : 13.5,
+                  color: color)),
+        ],
+      ),
     );
   }
 
@@ -396,7 +464,7 @@ class _CashdrawerReportScreenState
                   children: [
                     Expanded(
                       child: _summaryTile(
-                          'Total Masuk Laci',
+                          'Total Penjualan',
                           formatter.formatCurrency(day.total),
                           Colors.green.shade700),
                     ),
@@ -433,6 +501,17 @@ class _CashdrawerReportScreenState
                             color: Colors.green.shade700)),
                   ],
                 ),
+                const Divider(height: 28),
+                const Text('Rincian Cashdrawer',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                _reconRow('Modal Awal (Cash Awal)', day.startingCash),
+                _reconRow('Pemasukan Tunai', day.cashIncome, sign: '+'),
+                _reconRow('Pengeluaran', day.expenses,
+                    sign: '−', color: Colors.red.shade600),
+                const Divider(height: 16),
+                _reconRow('Modal Akhir (Ending Cash)', day.endingCash,
+                    bold: true, color: Colors.teal.shade800),
               ],
             ),
           ),

@@ -147,17 +147,56 @@ class ShiftNotifier extends StateNotifier<ShiftState> {
     final cashierId = shift.cashierId;
 
     double cashSales = 0.0;
+    // Penjualan POS NON-TUNAI (QRIS/Transfer/Midtrans) milik kasir ini selama
+    // shift — dipakai untuk mengisi otomatis kotak "QRIS / Transfer" saat
+    // mengakhiri shift. Uang ini TIDAK masuk laci (tidak menambah endingCash).
+    double nonCashSales = 0.0;
     for (final doc in salesSnapshot.docs) {
       final d = doc.data();
       final isPos = (d['source'] as String?) == 'pos';
       final status = (d['status'] as String? ?? '').toLowerCase();
       final method = (d['paymentMethod'] as String? ?? '').toLowerCase();
       final docCashier = d['cashierId'] as String?;
-      if (isPos &&
-          status == 'success' &&
-          (method == 'cash' || method == 'tunai') &&
-          docCashier == cashierId) {
-        cashSales += (d['total'] as num?)?.toDouble() ?? 0.0;
+      if (isPos && status == 'success' && docCashier == cashierId) {
+        final amt = (d['total'] as num?)?.toDouble() ?? 0.0;
+        if (method == 'cash' || method == 'tunai') {
+          cashSales += amt;
+        } else {
+          nonCashSales += amt;
+        }
+      }
+    }
+
+    // Pesanan MARKETPLACE "Ambil di Toko" yang DIVALIDASI (dibayar di meja
+    // kasir) selama shift juga masuk laci — uangnya diterima di kasir. Memakai
+    // `validatedAt` (waktu dibayar/divalidasi), BUKAN `createdAt`, karena
+    // pesanan bisa dibuat jauh sebelum diambil. COD/tunai → Penjualan Tunai
+    // (menambah Modal Akhir); QRIS/Midtrans/Transfer → QRIS/Transfer (tidak
+    // menambah Modal Akhir). Dicocokkan ke kasir shift ini.
+    final pickupSnapshot = await _firestore
+        .collection('orders')
+        .where('validatedAt', isGreaterThanOrEqualTo: startTime)
+        .where('validatedAt', isLessThanOrEqualTo: now)
+        .get();
+    for (final doc in pickupSnapshot.docs) {
+      final d = doc.data();
+      if ((d['source'] as String?) != 'marketplace') continue;
+      final ship = (d['shippingMethod'] as String? ?? '').trim().toLowerCase();
+      if (ship != 'ambil di toko') continue;
+      if ((d['cashierId'] as String?) != cashierId) continue;
+      final status = (d['status'] as String? ?? '').toLowerCase();
+      if (status != 'delivered' &&
+          status != 'success' &&
+          status != 'processing' &&
+          status != 'shipped') {
+        continue;
+      }
+      final method = (d['paymentMethod'] as String? ?? '').toLowerCase();
+      final amt = (d['total'] as num?)?.toDouble() ?? 0.0;
+      if (method == 'cash' || method == 'tunai' || method == 'cod') {
+        cashSales += amt;
+      } else {
+        nonCashSales += amt;
       }
     }
 
@@ -176,6 +215,7 @@ class ShiftNotifier extends StateNotifier<ShiftState> {
 
     return {
       'totalSales': cashSales,
+      'qrisOrTransfer': nonCashSales,
       'totalExpenses': totalExpenses,
       'endingCash': shift.startingCash + cashSales - totalExpenses,
     };

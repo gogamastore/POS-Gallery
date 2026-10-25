@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ionicons/ionicons.dart'; // Menggunakan Ionicons untuk konsistensi
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
@@ -189,6 +190,9 @@ class ProfileScreen extends ConsumerWidget {
                             await authService.signOut();
                           },
                         ),
+
+                        const SizedBox(height: 24),
+                        _buildVersionInfo(),
                       ],
                     );
                   },
@@ -198,6 +202,35 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  // Footer info versi aplikasi (read-only) — tiap device karyawan bisa melihat
+  // versi yang terpasang. Dibaca dari package_info_plus (versi + build number),
+  // TANPA pengecekan/paksa update.
+  Widget _buildVersionInfo() {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snapshot) {
+        final versionText = snapshot.hasData
+            ? '${snapshot.data!.version}+${snapshot.data!.buildNumber}'
+            : '…';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            children: [
+              Icon(Ionicons.information_circle_outline,
+                  size: 16, color: Colors.grey.shade400),
+              const SizedBox(height: 4),
+              Text(
+                'Versi Aplikasi $versionText',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

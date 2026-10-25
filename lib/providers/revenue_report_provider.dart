@@ -105,13 +105,25 @@ class DailyRevenue {
   final double total;
   final int orderCount;
   final PaymentBreakdown breakdown;
+  // Rincian laci kas per hari (dipakai Laporan Cashdrawer); 0 di Laporan
+  // Pendapatan kecuali `expenses` yang juga dipakai di sana.
+  final double startingCash; // modal awal shift yang dibuka hari itu
+  final double expenses; // pengeluaran operasional hari itu
 
   const DailyRevenue({
     required this.date,
     required this.total,
     required this.orderCount,
     required this.breakdown,
+    this.startingCash = 0,
+    this.expenses = 0,
   });
+
+  /// Pemasukan tunai hari itu = bucket cash.
+  double get cashIncome => breakdown.cash;
+
+  /// Modal akhir hari itu = modal awal + pemasukan tunai − pengeluaran.
+  double get endingCash => startingCash + breakdown.cash - expenses;
 }
 
 @immutable
@@ -121,6 +133,11 @@ class RevenueReportState {
   final double totalRevenue;
   final int totalTransactions;
   final PaymentBreakdown totalBreakdown;
+  // Modal awal kasir (jumlah startingCash shift di rentang) & total pengeluaran
+  // (operational_expenses di rentang). Dipakai Laporan Cashdrawer (modal akhir)
+  // & Laporan Pendapatan (pendapatan bersih).
+  final double startingCash;
+  final double totalExpenses;
   final bool isLoading;
   final String? errorMessage;
   final RevenueFilterType activeFilter;
@@ -134,6 +151,8 @@ class RevenueReportState {
     this.totalRevenue = 0,
     this.totalTransactions = 0,
     this.totalBreakdown = const PaymentBreakdown(),
+    this.startingCash = 0,
+    this.totalExpenses = 0,
     this.isLoading = false,
     this.errorMessage,
     this.activeFilter = RevenueFilterType.thisMonth,
@@ -142,12 +161,24 @@ class RevenueReportState {
     this.cashiers = const [],
   });
 
+  /// Pemasukan tunai (uang yang masuk laci kas) = bucket cash.
+  double get cashIncome => totalBreakdown.cash;
+
+  /// Modal akhir laci kas = modal awal + pemasukan tunai − pengeluaran.
+  /// QRIS & Transfer TIDAK ikut (tidak menambah uang tunai di laci).
+  double get endingCash => startingCash + totalBreakdown.cash - totalExpenses;
+
+  /// Pendapatan bersih = total penjualan − total pengeluaran.
+  double get netIncome => totalRevenue - totalExpenses;
+
   RevenueReportState copyWith({
     DateTimeRange? selectedDateRange,
     List<DailyRevenue>? dailyData,
     double? totalRevenue,
     int? totalTransactions,
     PaymentBreakdown? totalBreakdown,
+    double? startingCash,
+    double? totalExpenses,
     bool? isLoading,
     String? errorMessage,
     RevenueFilterType? activeFilter,
@@ -162,6 +193,8 @@ class RevenueReportState {
       totalRevenue: totalRevenue ?? this.totalRevenue,
       totalTransactions: totalTransactions ?? this.totalTransactions,
       totalBreakdown: totalBreakdown ?? this.totalBreakdown,
+      startingCash: startingCash ?? this.startingCash,
+      totalExpenses: totalExpenses ?? this.totalExpenses,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage,
       activeFilter: activeFilter ?? this.activeFilter,
@@ -181,6 +214,30 @@ class RevenueReportNotifier extends StateNotifier<RevenueReportState> {
   /// Hasil query mentah (sebelum filter kanal/kasir). Disimpan agar ganti
   /// filter tidak perlu query ulang ke Firestore.
   List<app_order.Order> _rawOrders = [];
+
+  /// Pengeluaran operasional mentah (date + cashierId + amount) untuk rentang.
+  List<({DateTime date, String? cashierId, double amount})> _rawExpenses = [];
+
+  /// Ambil pengeluaran (operational_expenses) dalam rentang tanggal. Query
+  /// satu field range → tidak butuh index komposit.
+  Future<List<({DateTime date, String? cashierId, double amount})>>
+      _fetchExpenses(DateTime start, DateTime end) async {
+    final endInclusive =
+        DateTime(end.year, end.month, end.day, 23, 59, 59, 999);
+    final snap = await FirebaseFirestore.instance
+        .collection('operational_expenses')
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endInclusive))
+        .get();
+    return snap.docs.map((d) {
+      final data = d.data();
+      return (
+        date: (data['date'] as Timestamp?)?.toDate() ?? start,
+        cashierId: data['cashierId'] as String?,
+        amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
+      );
+    }).toList();
+  }
 
   void setDateRange(DateTimeRange dateRange) {
     state = state.copyWith(
@@ -249,6 +306,12 @@ class RevenueReportNotifier extends StateNotifier<RevenueReportState> {
           );
 
       _rawOrders = orders;
+      try {
+        _rawExpenses = await _fetchExpenses(
+            state.selectedDateRange!.start, state.selectedDateRange!.end);
+      } catch (_) {
+        _rawExpenses = [];
+      }
 
       // Bangun daftar kasir dari order yang punya cashierId (tampilkan nama
       // kasir bila ada, fallback ke id).
@@ -342,12 +405,25 @@ class RevenueReportNotifier extends StateNotifier<RevenueReportState> {
       totalBreakdown = totalBreakdown.addOrder(order.paymentMethod, amount);
     }
 
+    // Total pengeluaran (ikut filter kasir; tidak terpengaruh filter kanal
+    // karena pengeluaran bersifat operasional, bukan per-pesanan). Sekaligus
+    // dibukukan per hari agar muncul di rincian harian.
+    double totalExpenses = 0;
+    final Map<DateTime, double> expByDay = {};
+    for (final e in _rawExpenses) {
+      if (cashier != null && e.cashierId != cashier) continue;
+      totalExpenses += e.amount;
+      final dk = DateTime(e.date.year, e.date.month, e.date.day);
+      expByDay[dk] = (expByDay[dk] ?? 0) + e.amount;
+    }
+
     final daily = byDay.entries
         .map((e) => DailyRevenue(
               date: e.key,
               total: e.value.total,
               orderCount: e.value.count,
               breakdown: e.value.breakdown,
+              expenses: expByDay[e.key] ?? 0,
             ))
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date)); // terbaru dulu
@@ -357,6 +433,7 @@ class RevenueReportNotifier extends StateNotifier<RevenueReportState> {
       totalRevenue: totalRevenue,
       totalTransactions: filtered.length,
       totalBreakdown: totalBreakdown,
+      totalExpenses: totalExpenses,
       isLoading: false,
       errorMessage: null,
     );

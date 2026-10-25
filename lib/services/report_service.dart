@@ -51,33 +51,49 @@ class ReportService {
     required DateTime startDate,
     required DateTime endDate,
   }) async {
-    final ordersSnapshot = await _db
-        .collection('orders')
-        .where('validatedAt', isGreaterThanOrEqualTo: startDate)
-        .where('validatedAt', isLessThanOrEqualTo: endDate)
-        .where('status', isEqualTo: 'success')
-        .get();
+    // Memakai klasifikasi penjualan yang SAMA dengan Laporan Penjualan: semua
+    // pesanan TERVALIDASI dalam rentang `validatedAt` (status processing/
+    // success/shipped/delivered, dua ejaan) — mencakup POS DAN marketplace,
+    // bukan hanya 'success' (POS saja) seperti sebelumnya.
+    final orders = await getOrdersByDateRange(
+      startDate: startDate,
+      endDate: endDate,
+    );
 
     double totalRevenue = 0;
     double totalCOGS = 0;
 
-    for (var doc in ordersSnapshot.docs) {
-      final order = app_order.Order.fromFirestore(doc);
+    // Cache harga beli produk saat ini agar dokumen yang sama tidak dibaca
+    // berulang-ulang (hanya dipakai bila order tidak punya snapshot modal).
+    final Map<String, double> currentCostCache = {};
+
+    for (final order in orders) {
       totalRevenue += order.total.toDouble();
 
-      for (var item in order.products) {
+      for (final item in order.products) {
         try {
           final productId = item['productId'] as String?;
           final quantity = (item['quantity'] as num? ?? 0);
+          if (productId == null) continue;
 
-          if (productId != null) {
-            final productDoc =
-                await _db.collection('products').doc(productId).get();
-            if (productDoc.exists) {
-              final product = Product.fromFirestore(productDoc);
-              totalCOGS += (product.purchasePrice ?? 0.0) * quantity;
+          // HPP memakai SNAPSHOT modal yang disimpan saat validasi
+          // (products[].purchasePrice); jika tidak ada (data lama), fallback
+          // ke harga beli produk SAAT INI — konsisten dengan Laporan Penjualan.
+          double unitCost;
+          final snapshot = item['purchasePrice'];
+          if (snapshot is num) {
+            unitCost = snapshot.toDouble();
+          } else {
+            if (!currentCostCache.containsKey(productId)) {
+              final productDoc =
+                  await _db.collection('products').doc(productId).get();
+              currentCostCache[productId] = productDoc.exists
+                  ? (Product.fromFirestore(productDoc).purchasePrice ?? 0.0)
+                  : 0.0;
             }
+            unitCost = currentCostCache[productId]!;
           }
+          totalCOGS += unitCost * quantity;
         } catch (e) {
           // Lanjutkan jika ada error
         }

@@ -8,6 +8,8 @@ import '../../models/product.dart';
 import '../../models/promotion_model.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/promo_provider.dart';
+import '../../providers/brand_provider.dart';
+import '../../providers/category_provider.dart';
 import 'edit_product_screen.dart';
 import 'purchase_history_dialog.dart';
 
@@ -216,6 +218,27 @@ class ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
   // --- PERUBAHAN TATA LETAK DI SINI ---
   Widget _buildInfoSection(NumberFormat currencyFormatter, AsyncValue<List<Promotion>> promosAsync) {
+    // Resolusi nama Kategori & Brand untuk ditampilkan.
+    final brandMap = {
+      for (final b in (ref.watch(brandsStreamProvider).valueOrNull ?? <Brand>[]))
+        b.id: b.name,
+    };
+    final categoryMap = {
+      for (final c
+          in (ref.watch(categoriesStreamProvider).valueOrNull ?? const []))
+        c.id: c.name,
+    };
+    final categoryName = (_currentProduct.categoryName != null &&
+            _currentProduct.categoryName!.isNotEmpty)
+        ? _currentProduct.categoryName!
+        : (_currentProduct.categoryId != null
+            ? (categoryMap[_currentProduct.categoryId] ?? '')
+            : '');
+    final brandName = (_currentProduct.brandId != null &&
+            _currentProduct.brandId!.isNotEmpty)
+        ? (brandMap[_currentProduct.brandId] ?? '')
+        : '';
+
     final activePromo = promosAsync.whenData((promos) {
       try {
         return promos.firstWhere((p) => 
@@ -317,10 +340,24 @@ class ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               title: 'Berat Produk',
               value: '${_currentProduct.weightGram} gram',
             ),
+            _buildInfoTile(
+              title: 'Kategori',
+              value: categoryName.isNotEmpty ? categoryName : '-',
+              isRightAligned: true,
+            ),
           ],
         ),
         const SizedBox(height: 20),
-        // Baris kedua: Harga Jual atau Promo
+        // Brand — bila kosong tampil "Belum ada brand" (amber) agar admin tahu
+        // produk mana yang belum didaftarkan brand-nya.
+        _buildInfoTile(
+          title: 'Brand',
+          value: brandName.isNotEmpty ? brandName : 'Belum ada brand',
+          valueColor:
+              brandName.isNotEmpty ? null : const Color(0xFFB45309),
+        ),
+        const SizedBox(height: 20),
+        // Baris terakhir: Harga Jual atau Promo
         priceDisplayWidget,
       ],
     );

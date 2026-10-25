@@ -196,12 +196,25 @@ class PosScreenState extends ConsumerState<PosScreen> {
     );
   }
 
-  void _showEndShiftDialog(ShiftState shiftState) {
+  void _showEndShiftDialog(ShiftState shiftState) async {
     final shiftNotifier = ref.read(shiftProvider.notifier);
     final shift = shiftState.activeShift!;
     final formKey = GlobalKey<FormState>();
     final countedCashController = TextEditingController();
     final qrisTransferController = TextEditingController();
+
+    // Hitung ringkasan shift sekali di awal. Kotak "QRIS / Transfer" terisi
+    // OTOMATIS dari total pesanan POS non-tunai (QRIS/Transfer) selama jam shift
+    // kasir ini; kasir masih bisa menyuntingnya bila perlu.
+    Map<String, double> summary = {};
+    try {
+      summary = await shiftNotifier.calculateShiftSummary(shift);
+    } catch (_) {}
+    final autoQrisTransfer = summary['qrisOrTransfer'] ?? 0;
+    // Selalu isi (termasuk 0) agar field wajib terpenuhi & mencerminkan nilai
+    // sebenarnya; kasir tetap bisa mengubahnya.
+    qrisTransferController.text = autoQrisTransfer.toStringAsFixed(0);
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -222,7 +235,7 @@ class PosScreenState extends ConsumerState<PosScreen> {
                     Text(
                         'Modal Awal: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ').format(shift.startingCash)}'),
                     const Divider(height: 24),
-                    _buildFutureCalculation(shiftNotifier, shift),
+                    _buildShiftCalculation(summary),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: countedCashController,
@@ -303,48 +316,40 @@ class PosScreenState extends ConsumerState<PosScreen> {
     );
   }
 
-  Widget _buildFutureCalculation(
-      ShiftNotifier shiftNotifier, CashDrawerShift shift) {
-    return FutureBuilder<Map<String, double>>(
-      future: shiftNotifier.calculateShiftSummary(shift),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}');
-        }
+  Widget _buildShiftCalculation(Map<String, double> summary) {
+    final totalSales = summary['totalSales'] ?? 0;
+    final qrisOrTransfer = summary['qrisOrTransfer'] ?? 0;
+    final totalExpenses = summary['totalExpenses'] ?? 0;
+    final endingCash = summary['endingCash'] ?? 0;
 
-        final data = snapshot.data ?? {};
-        final totalSales = data['totalSales'] ?? 0;
-        final totalExpenses = data['totalExpenses'] ?? 0;
-        final endingCash = data['endingCash'] ?? 0;
+    final currencyFormat =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ');
 
-        final currencyFormat =
-            NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ');
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Penjualan Tunai:'),
-              Text(currencyFormat.format(totalSales))
-            ]),
-            const SizedBox(height: 8),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Total Pengeluaran:'),
-              Text(currencyFormat.format(totalExpenses))
-            ]),
-            const SizedBox(height: 8),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Modal Akhir:',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(currencyFormat.format(endingCash),
-                  style: const TextStyle(fontWeight: FontWeight.bold))
-            ]),
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Penjualan Tunai:'),
+          Text(currencyFormat.format(totalSales))
+        ]),
+        const SizedBox(height: 8),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('QRIS / Transfer:'),
+          Text(currencyFormat.format(qrisOrTransfer))
+        ]),
+        const SizedBox(height: 8),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Total Pengeluaran:'),
+          Text(currencyFormat.format(totalExpenses))
+        ]),
+        const SizedBox(height: 8),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Modal Akhir:',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(currencyFormat.format(endingCash),
+              style: const TextStyle(fontWeight: FontWeight.bold))
+        ]),
+      ],
     );
   }
 

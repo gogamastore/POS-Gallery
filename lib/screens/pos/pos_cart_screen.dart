@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../models/pos_cart_item.dart';
 import '../../providers/pos_provider.dart';
+import '../../providers/shift_provider.dart';
 import 'edit_pos_cart_item_dialog.dart';
 import 'process_pos_screen.dart';
 
@@ -26,6 +27,8 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
   Widget build(BuildContext context) {
     final cartItems = ref.watch(posCartProvider);
     final totalAmount = ref.watch(posTotalProvider);
+    // Transaksi POS hanya boleh diproses bila shift (cashdrawer) sedang aktif.
+    final shiftActive = ref.watch(shiftProvider).isShiftActive;
     final currencyFormatter =
         NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
@@ -64,7 +67,7 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
       bottomNavigationBar: cartItems.isEmpty
           ? null
           : _buildSummaryBottomBar(
-              context, currencyFormatter.format(totalAmount)),
+              context, currencyFormatter.format(totalAmount), shiftActive),
     );
   }
 
@@ -168,7 +171,8 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
     );
   }
 
-  Widget _buildSummaryBottomBar(BuildContext context, String formattedTotal) {
+  Widget _buildSummaryBottomBar(
+      BuildContext context, String formattedTotal, bool shiftActive) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       decoration: BoxDecoration(
@@ -182,38 +186,69 @@ class PosCartScreenState extends ConsumerState<PosCartScreen> {
         borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(16), topRight: Radius.circular(16)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Total Penjualan',
-                  style: TextStyle(color: Colors.grey)),
-              Text(formattedTotal,
-                  style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green)),
-            ],
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                  builder: (context) => const ProcessPosScreen()));
-            },
-            icon: const Icon(Icons.shopping_cart_checkout),
-            label: const Text('Lanjutkan Ke Ringkasan'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              textStyle:
-                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30)),
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
+          // Peringatan + tombol dinonaktifkan bila shift (cashdrawer) belum aktif.
+          if (!shiftActive)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10.0),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 18, color: Colors.orange[800]),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Mulai shift (cashdrawer) terlebih dahulu untuk memproses transaksi.',
+                      style:
+                          TextStyle(fontSize: 12.5, color: Colors.orange[900]),
+                    ),
+                  ),
+                ],
+              ),
             ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Total Penjualan',
+                      style: TextStyle(color: Colors.grey)),
+                  Text(formattedTotal,
+                      style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green)),
+                ],
+              ),
+              ElevatedButton.icon(
+                // Dinonaktifkan (onPressed null) saat shift belum aktif → kasir
+                // tidak bisa menekan "Proses Transaksi".
+                onPressed: shiftActive
+                    ? () {
+                        Navigator.of(context).push(MaterialPageRoute(
+                            builder: (context) => const ProcessPosScreen()));
+                      }
+                    : null,
+                icon: Icon(shiftActive
+                    ? Icons.shopping_cart_checkout
+                    : Icons.lock_outline),
+                label: const Text('Proses Transaksi'),
+                style: ElevatedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  textStyle: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30)),
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
         ],
       ),

@@ -114,6 +114,19 @@ class AddProductScreenState extends ConsumerState<AddProductScreen> {
       final weightGram = int.tryParse(_weightController.text) ?? 0;
       final description = _descriptionController.text;
 
+      // Resolusi NAMA kategori dari id terpilih agar ikut disimpan sebagai
+      // `category` (seragam dengan web admin & app pembeli).
+      String? categoryName;
+      final categoryList = ref.read(categoriesStreamProvider).value;
+      if (_selectedCategoryId != null && categoryList != null) {
+        for (final c in categoryList) {
+          if (c.id == _selectedCategoryId) {
+            categoryName = c.name;
+            break;
+          }
+        }
+      }
+
       final newProduct = Product(
         id: '',
         name: name,
@@ -124,6 +137,7 @@ class AddProductScreenState extends ConsumerState<AddProductScreen> {
         weightGram: weightGram,
         description: description,
         categoryId: _selectedCategoryId,
+        categoryName: categoryName,
         brandId: _selectedBrandId,
         image: imageUrl,
       );
