@@ -7,6 +7,7 @@ import '../../models/order.dart';
 import '../../models/order_item.dart';
 import '../../models/product.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/user_provider.dart';
 import 'edit_order_item_dialog.dart';
 import 'select_product_screen.dart';
 import '../../utils/formatter.dart';
@@ -29,14 +30,17 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
   void initState() {
     super.initState();
     for (var p in widget.order.products) {
+      // Parsing AMAN: quantity/price bisa tersimpan sebagai int atau double
+      // (pesanan dari web/data lama) → cast `as int` yang lama bikin layar
+      // edit crash saat dibuka. Pakai `num` + toInt/toDouble + fallback.
       _items.add(OrderItem(
-        productId: p['productId'] as String,
-        name: p['name'] as String,
-        quantity: p['quantity'] as int,
-        price: (p['price'] as num).toDouble(),
-        // PERBAIKAN: Membaca 'imageUrl'
-        imageUrl: p['imageUrl'] as String?,
-        sku: p['sku'] as String?,
+        productId: (p['productId'] ?? '').toString(),
+        name: (p['name'] ?? '').toString(),
+        quantity: (p['quantity'] as num?)?.toInt() ?? 0,
+        price: (p['price'] as num?)?.toDouble() ?? 0,
+        // sku bisa tersimpan sebagai angka (barcode) → toString() agar aman.
+        imageUrl: (p['imageUrl'] ?? p['image'])?.toString(),
+        sku: p['sku']?.toString(),
       ));
     }
     // PERBAIKAN: Mengonversi num ke double
@@ -122,11 +126,13 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
     }
 
     try {
+      final editedBy = ref.read(userDataProvider).value?.name ?? 'Admin';
       await ref.read(orderActionsProvider.notifier).updateOrderDetails(
             widget.order.id!,
             _items,
             _subtotal,
             _total,
+            editedBy: editedBy,
           );
 
       if (!mounted) return;

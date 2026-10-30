@@ -34,6 +34,14 @@ class Order {
   final String paymentMethod;
   final String paymentStatus;
 
+  /// Pembayaran tunai POS: uang yang dibayar pembeli & kembalian.
+  /// Null untuk metode non-tunai / data lama.
+  final num? amountPaid;
+  final num? changeAmount;
+
+  /// Riwayat edit pesanan: tiap entri {editedAt, editedBy, added[], removed[]}.
+  final List<Map<String, dynamic>> editHistory;
+
   // Status & Tracking
   final String status;
   final String kasir;
@@ -70,6 +78,9 @@ class Order {
     this.paymentFee,
     required this.paymentMethod,
     required this.paymentStatus,
+    this.amountPaid,
+    this.changeAmount,
+    this.editHistory = const [],
     required this.status,
     required this.kasir,
     this.cashierId,
@@ -112,6 +123,12 @@ class Order {
       paymentFee: data['paymentFee'] as num?,
       paymentMethod: data['paymentMethod'] as String? ?? 'N/A',
       paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
+      amountPaid: data['amountPaid'] as num?,
+      changeAmount: data['changeAmount'] as num?,
+      editHistory: (data['editHistory'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          const [],
       status: data['status'] as String? ?? 'N/A',
       kasir: data['kasir'] as String? ?? 'N/A',
       cashierId: data['cashierId'] as String?,
@@ -149,6 +166,9 @@ class Order {
       paymentFee: paymentFee,
       paymentMethod: paymentMethod,
       paymentStatus: paymentStatus,
+      amountPaid: amountPaid,
+      changeAmount: changeAmount,
+      editHistory: editHistory,
       status: status,
       kasir: kasir,
       cashierId: cashierId,
@@ -183,7 +203,9 @@ class Order {
       'shippingFee': shippingFee,
       'paymentMethod': paymentMethod,
       'paymentStatus': paymentStatus,
-      'paymentProofFileName': "", 
+      if (amountPaid != null) 'amountPaid': amountPaid,
+      if (changeAmount != null) 'changeAmount': changeAmount,
+      'paymentProofFileName': "",
       'paymentProofId': "",
       'paymentProofUploaded': false,
       'paymentProofUrl': "",

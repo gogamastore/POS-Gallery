@@ -116,6 +116,7 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
     double newSubtotal,
     double newTotal, {
     String? validatorName,
+    String? editedBy,
   }) async {
     final orderService = ref.read(orderServiceProvider);
     await orderService.updateOrderDetails(
@@ -124,6 +125,7 @@ class OrderActionsNotifier extends AutoDisposeNotifier<void> {
       newSubtotal,
       newTotal,
       validatorName: validatorName,
+      editedBy: editedBy,
     );
     refreshOrders();
     ref.invalidate(orderDetailsProvider(orderId));

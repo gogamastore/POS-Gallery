@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
@@ -286,7 +287,19 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
         foregroundColor: const Color(0xFF2C3E50),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
+        // F2 = isi "Uang Pas" (uang diterima = total) saat metode tunai,
+        // mengikuti pintasan kasir pada tombol "Uang Pas (F2)".
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.f2): () {
+              if (_paymentMethod == 'cash') {
+                _setCash(ref.read(posTotalProvider));
+              }
+            },
+          },
+          child: Focus(
+          autofocus: true,
+          child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Form(
             key: _formKey,
@@ -314,6 +327,8 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
                 }
               },
             ),
+          ),
+        ),
           ),
         ),
       ),
@@ -397,8 +412,18 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
   // ─── Input pembayaran tunai: nominal cepat + keypad + kembalian ──────
   void _appendCash(String digits) {
     setState(() {
+      if (digits == '.') {
+        // Hanya satu titik desimal, dan tidak sebagai karakter pertama.
+        if (_cashRaw.isEmpty || _cashRaw.contains('.')) return;
+        _cashRaw += '.';
+        return;
+      }
       if (_cashRaw.length >= 12) return; // batasi agar tidak kebablasan
-      if (_cashRaw.isEmpty && (digits == '0' || digits == '000')) return;
+      // Jangan biarkan nominal diawali nol (0/00/000).
+      if (_cashRaw.isEmpty &&
+          (digits == '0' || digits == '00' || digits == '000')) {
+        return;
+      }
       _cashRaw += digits;
     });
   }
@@ -421,86 +446,66 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
     final totalAmount = ref.watch(posTotalProvider);
     final change = _cashReceived - totalAmount;
     final bool sufficient = _cashReceived >= totalAmount && _cashReceived > 0;
-    final quickNominals = <double>[10000, 50000, 100000, 200000];
 
     return Padding(
       padding: const EdgeInsets.only(top: 16.0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text('Uang Diterima',
               style: TextStyle(fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
-          // Nominal cepat
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: () => _setCash(totalAmount),
-                child: const Text('Uang Pas'),
-              ),
-              ...quickNominals.map((n) => OutlinedButton(
-                    onPressed: () => _setCash(n),
-                    child: Text(NumberFormat.decimalPattern('id_ID').format(n)),
-                  )),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Layar jumlah uang & kembalian
+          // Layar nominal uang (besar) + kembalian
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
             decoration: BoxDecoration(
               color: const Color(0xFFF1F3F5),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Uang Dibayar',
-                        style: TextStyle(color: Colors.black54)),
-                    Row(
-                      children: [
-                        Text(currency.format(_cashReceived),
-                            style: const TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold)),
-                        if (_cashRaw.isNotEmpty)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () => setState(() => _cashRaw = ''),
-                          ),
-                      ],
-                    ),
-                  ],
+                Text(
+                  currency.format(_cashReceived),
+                  style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2C3E50)),
                 ),
-                const Divider(height: 18),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Kembalian',
-                        style: TextStyle(color: Colors.black54)),
-                    Text(
-                      change >= 0
-                          ? currency.format(change)
-                          : 'Kurang ${currency.format(-change)}',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: sufficient
-                            ? const Color(0xFF27AE60)
-                            : Colors.redAccent,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  change >= 0
+                      ? 'Kembalian: ${currency.format(change)}'
+                      : 'Kurang ${currency.format(-change)}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: sufficient
+                        ? const Color(0xFF27AE60)
+                        : Colors.redAccent,
+                  ),
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 12),
+          // Tombol nominal cepat (hijau) — mengikuti contoh desain.
+          Row(
+            children: [
+              Expanded(
+                  child: _quickCashButton(
+                      'Uang Pas (F2)', () => _setCash(totalAmount))),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: _quickCashButton('Rp 20.000', () => _setCash(20000))),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: _quickCashButton('Rp 50.000', () => _setCash(50000))),
+              const SizedBox(width: 8),
+              Expanded(
+                  child:
+                      _quickCashButton('Rp 100.000', () => _setCash(100000))),
+            ],
           ),
           const SizedBox(height: 12),
           // Keypad kalkulator
@@ -510,37 +515,86 @@ class ProcessPosScreenState extends ConsumerState<ProcessPosScreen> {
     );
   }
 
+  Widget _quickCashButton(String label, VoidCallback onTap) {
+    return ElevatedButton(
+      onPressed: onTap,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF27AE60),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
   Widget _buildCashKeypad() {
-    Widget key(String label, {VoidCallback? onTap, Widget? child}) {
+    final totalAmount = ref.watch(posTotalProvider);
+
+    Widget key(String label, {VoidCallback? onTap, Widget? child, Color? fg}) {
       return Expanded(
         child: Padding(
           padding: const EdgeInsets.all(4.0),
-          child: OutlinedButton(
-            onPressed: onTap ?? () => _appendCash(label),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              foregroundColor: const Color(0xFF2C3E50),
+          child: SizedBox(
+            height: 52,
+            child: OutlinedButton(
+              onPressed: onTap ?? () => _appendCash(label),
+              style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: fg ?? const Color(0xFF2C3E50),
+                side: BorderSide(color: Colors.grey.shade300),
+                padding: EdgeInsets.zero,
+              ),
+              child: child ??
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w600)),
             ),
-            child: child ??
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w600)),
           ),
         ),
       );
     }
 
+    // Tata letak kalkulator sesuai contoh: kolom ke-4 = C (hapus semua),
+    // ⌫ (hapus 1 digit), uang-pas (ikon uang), dan titik desimal.
     return Column(
       children: [
-        Row(children: [key('1'), key('2'), key('3')]),
-        Row(children: [key('4'), key('5'), key('6')]),
-        Row(children: [key('7'), key('8'), key('9')]),
         Row(children: [
-          key('000'),
-          key('0'),
-          key('⌫',
+          key('7'),
+          key('8'),
+          key('9'),
+          key('C',
+              onTap: () => setState(() => _cashRaw = ''),
+              fg: Colors.redAccent),
+        ]),
+        Row(children: [
+          key('4'),
+          key('5'),
+          key('6'),
+          key('backspace',
               onTap: _backspaceCash,
-              child: const Icon(Icons.backspace_outlined)),
+              child: const Icon(Icons.backspace_outlined,
+                  color: Color(0xFF27AE60))),
+        ]),
+        Row(children: [
+          key('1'),
+          key('2'),
+          key('3'),
+          key('uangpas',
+              onTap: () => _setCash(totalAmount),
+              child: const Icon(Icons.payments_outlined,
+                  color: Color(0xFF27AE60))),
+        ]),
+        Row(children: [
+          key('0'),
+          key('00'),
+          key('000'),
+          key('.'),
         ]),
       ],
     );

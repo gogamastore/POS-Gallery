@@ -63,7 +63,8 @@ class _MarketplaceOrderValidationScreenState
       String? sku;
       try {
         final snap = await db.collection('products').doc(productId).get();
-        sku = snap.data()?['sku'] as String?;
+        // sku bisa tersimpan sebagai angka (barcode) → toString() agar aman.
+        sku = snap.data()?['sku']?.toString();
       } catch (_) {
         sku = null;
       }

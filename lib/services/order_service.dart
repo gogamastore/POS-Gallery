@@ -168,7 +168,7 @@ class OrderService {
   /// Updates order details, including products and totals, and adjusts stock accordingly.
   Future<void> updateOrderDetails(String orderId, List<OrderItem> newProducts,
       double newSubtotal, double newTotal,
-      {String? validatorName}) async {
+      {String? validatorName, String? editedBy}) async {
     final orderRef = _firestore.collection('orders').doc(orderId);
 
     await _firestore.runTransaction((transaction) async {
@@ -196,8 +196,12 @@ class OrderService {
             if (!productSnapshot.exists) {
               throw Exception('Produk ID ${entry.key} tidak ada.');
             }
+            // Cast aman: stok bisa int/double (data lama) → `as num`.toInt().
             final currentStock =
-                (productSnapshot.data() as Map<String, dynamic>)['stock'] as int;
+                ((productSnapshot.data() as Map<String, dynamic>)['stock']
+                        as num?)
+                    ?.toInt() ??
+                    0;
             if (currentStock < stockChange) {
               throw Exception('Stok tidak cukup untuk produk ID ${entry.key}.');
             }
@@ -207,9 +211,45 @@ class OrderService {
         }
       }
 
+      // Riwayat edit: produk yang DITAMBAH (delta>0) & DIHAPUS/dikurangi
+      // (delta<0), dari delta yang sama dgn penyesuaian stok.
+      final nameOf = <String, String>{
+        for (final p in oldOrder.products)
+          (p['productId'] ?? '').toString(): (p['name'] ?? '').toString(),
+        for (final p in newProducts) p.productId: p.name,
+      };
+      final added = <Map<String, dynamic>>[];
+      final removed = <Map<String, dynamic>>[];
+      stockChanges.forEach((id, delta) {
+        final entry = {
+          'productId': id,
+          'name': nameOf[id] ?? id,
+          'quantity': delta.abs(),
+        };
+        if (delta > 0) {
+          added.add(entry);
+        } else {
+          removed.add(entry);
+        }
+      });
+
       // Prepare and apply order update
       final updateData = _prepareUpdateData(
           newProducts, oldOrder.products, newSubtotal, newTotal, validatorName);
+
+      if (added.isNotEmpty || removed.isNotEmpty) {
+        final rawHistory = oldOrderSnapshot.data()?['editHistory'];
+        final history =
+            (rawHistory is List) ? List<dynamic>.from(rawHistory) : <dynamic>[];
+        history.add({
+          'editedAt': Timestamp.now(),
+          'editedBy': editedBy ?? '',
+          'added': added,
+          'removed': removed,
+        });
+        updateData['editHistory'] = history;
+      }
+
       transaction.update(orderRef, updateData);
     });
   }

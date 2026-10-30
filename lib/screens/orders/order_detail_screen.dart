@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -176,6 +177,16 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                         isTotal: true),
                   ],
                 ),
+                if (order.editHistory.isNotEmpty)
+                  _buildSection(
+                    context,
+                    title: 'Riwayat Perubahan',
+                    icon: Ionicons.time_outline,
+                    children: [
+                      for (final h in order.editHistory.reversed)
+                        _buildEditHistoryEntry(h),
+                    ],
+                  ),
                 if (order.status.toLowerCase() != 'cancelled' &&
                     order.status.toLowerCase() != 'success')
                   Padding(
@@ -292,6 +303,73 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                           ? Colors.redAccent
                           : Colors.grey.shade600))),
           Text(value, style: style),
+        ],
+      ),
+    );
+  }
+
+  // Satu entri riwayat edit: tanggal + (opsional) editor, lalu daftar produk
+  // yang ditambah (+ hijau) dan dihapus/dikurangi (− merah) beserta jumlahnya.
+  Widget _buildEditHistoryEntry(Map<String, dynamic> h) {
+    final ts = h['editedAt'];
+    final DateTime? dt = ts is Timestamp ? ts.toDate() : null;
+    final editedBy = (h['editedBy'] ?? '').toString();
+    final added = (h['added'] as List?) ?? const [];
+    final removed = (h['removed'] as List?) ?? const [];
+
+    String lineOf(dynamic e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      final qty = (m['quantity'] as num?)?.toInt() ?? 0;
+      return '${m['name'] ?? ''} (x$qty)';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Ionicons.time_outline, size: 14, color: Colors.grey),
+              const SizedBox(width: 6),
+              Text(
+                dt != null
+                    ? DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(dt)
+                    : '-',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              if (editedBy.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('· $editedBy',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ],
+          ),
+          for (final e in added)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('+ ${lineOf(e)}',
+                  style: const TextStyle(
+                      fontSize: 12.5, color: Color(0xFF15803D))),
+            ),
+          for (final e in removed)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('− ${lineOf(e)}',
+                  style: const TextStyle(
+                      fontSize: 12.5, color: Color(0xFFB91C1C))),
+            ),
         ],
       ),
     );

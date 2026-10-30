@@ -11,7 +11,7 @@
 ; ============================================================================
 
 #define MyAppName "Manafidh Office"
-#define MyAppVersion "5.4.4"
+#define MyAppVersion "5.5.4"
 #define MyAppPublisher "Gallery Makassar"
 #define MyAppExeName "myapp.exe"
 ; Folder hasil `flutter build windows --release` (relatif ke file .iss ini):

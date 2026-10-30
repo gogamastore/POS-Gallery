@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:ionicons/ionicons.dart';
 
-import '../../models/cash_drawer_shift.dart';
 import '../../models/pos_cart_item.dart';
 import '../../models/product.dart';
 import '../../models/promotion_model.dart';

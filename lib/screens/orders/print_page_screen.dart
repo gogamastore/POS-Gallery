@@ -316,6 +316,16 @@ class _PrintPageScreenState extends ConsumerState<PrintPageScreen> {
                             style: boldTextStyle),
                       ],
                     ),
+                    // Detail pembayaran TUNAI: uang dibayar & kembalian.
+                    if (widget.order.paymentMethod == 'cash' &&
+                        widget.order.amountPaid != null) ...[
+                      const SizedBox(height: 4),
+                      line('Uang Dibayar',
+                          currencyFormatter.format(widget.order.amountPaid!)),
+                      line('Kembalian',
+                          currencyFormatter
+                              .format(widget.order.changeAmount ?? 0)),
+                    ],
                     const Divider(color: Colors.black),
 
                     // --- Footer ---

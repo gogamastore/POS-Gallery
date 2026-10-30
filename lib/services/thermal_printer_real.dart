@@ -362,6 +362,25 @@ class _PrintingServiceImpl implements PrintingService {
           styles: const PosStyles(align: PosAlign.right, bold: true)),
     ]));
 
+    // Detail pembayaran TUNAI: uang dibayar & kembalian.
+    final num? paidCash = order.amountPaid;
+    if (order.paymentMethod == 'cash' && paidCash != null) {
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Uang Dibayar', width: 6),
+        PosColumn(
+            text: currencyFormatter.format(paidCash),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right)),
+      ]));
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Kembalian', width: 6),
+        PosColumn(
+            text: currencyFormatter.format(order.changeAmount ?? 0),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right)),
+      ]));
+    }
+
     bytes.addAll(generator.hr());
     bytes.addAll(generator.text('Terima Kasih!',
         styles: const PosStyles(align: PosAlign.center)));
