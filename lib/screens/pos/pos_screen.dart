@@ -1,4 +1,6 @@
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +33,18 @@ class PosScreenState extends ConsumerState<PosScreen> {
   final TextEditingController _searchController = TextEditingController();
   late final SoundService _soundService;
 
+  // Fokus kotak cari manual.
+  final FocusNode _searchFocusNode = FocusNode();
+  // Fokus "penangkap scan": selama tak ada field lain yang fokus, node inilah
+  // yang menerima ketukan tombol dari alat scanner eksternal (HID keyboard),
+  // sehingga scan tetap terdeteksi MESKIPUN kursor tidak di kotak pencarian.
+  final FocusNode _scanFocusNode = FocusNode();
+  // Buffer karakter dari scanner eksternal + waktu ketukan terakhir + timer
+  // flush (untuk scanner tanpa sufiks Enter).
+  String _scanBuffer = '';
+  DateTime? _lastScanKeyTime;
+  Timer? _scanFlushTimer;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +63,9 @@ class PosScreenState extends ConsumerState<PosScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
+    _scanFocusNode.dispose();
+    _scanFlushTimer?.cancel();
     _soundService.dispose();
     super.dispose();
   }
@@ -157,12 +174,168 @@ class PosScreenState extends ConsumerState<PosScreen> {
     final sku = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (context) => const BarcodeScannerScreen()),
     );
-    if (sku != null && mounted) {
-      _searchController.text = sku;
-      await _soundService.playSuccessSound();
+    if (sku != null && sku.isNotEmpty && mounted) {
+      // Kamera internal diperlakukan sama seperti scanner eksternal.
+      await _handleScannedCode(sku);
     } else {
       await _soundService.playErrorSound();
     }
+    // Kembalikan fokus ke penangkap scan agar scan berikutnya tetap tertangkap.
+    if (mounted) _scanFocusNode.requestFocus();
+  }
+
+  // === Penanganan scan (kamera internal + alat scanner eksternal HID) ===
+
+  // Dipanggil untuk tiap event tombol selama penangkap scan (_scanFocusNode)
+  // yang fokus — yakni ketika kursor TIDAK di kotak pencarian. Scanner HID
+  // mengetuk tombol sangat cepat lalu (umumnya) menekan Enter.
+  KeyEventResult _onScanKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // Saat kasir aktif mengetik di kotak cari, biarkan kotak yang menangani
+    // (ketik manual + Enter) supaya tidak dobel diproses.
+    if (_searchFocusNode.hasFocus) return KeyEventResult.ignored;
+
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      _flushScanBuffer(viaEnter: true);
+      return KeyEventResult.handled;
+    }
+
+    final char = event.character;
+    // Hanya karakter cetak (abaikan tombol kontrol seperti Shift/Tab/panah).
+    if (char == null || char.isEmpty || char.codeUnitAt(0) < 0x20) {
+      return KeyEventResult.ignored;
+    }
+
+    final now = DateTime.now();
+    // Jeda lama antar ketukan = awal scan BARU → buang sisa buffer lama. Ini
+    // juga yang membuat kode scan baru mengganti yang lama tanpa perlu dihapus.
+    if (_lastScanKeyTime != null &&
+        now.difference(_lastScanKeyTime!) >
+            const Duration(milliseconds: 120)) {
+      _scanBuffer = '';
+    }
+    _lastScanKeyTime = now;
+    _scanBuffer += char;
+
+    // Scanner tanpa sufiks Enter: proses otomatis setelah jeda singkat.
+    _scanFlushTimer?.cancel();
+    _scanFlushTimer =
+        Timer(const Duration(milliseconds: 120), () => _flushScanBuffer());
+
+    return KeyEventResult.handled;
+  }
+
+  void _flushScanBuffer({bool viaEnter = false}) {
+    _scanFlushTimer?.cancel();
+    final code = _scanBuffer.trim();
+    _scanBuffer = '';
+    _lastScanKeyTime = null;
+    if (code.isEmpty) return;
+    // Tanpa Enter, butuh minimal 3 karakter agar ketukan tunggal tak sengaja
+    // tidak dianggap sebagai scan.
+    if (!viaEnter && code.length < 3) return;
+    _handleScannedCode(code);
+  }
+
+  // Harga modal acuan: utamakan harga beli terakhir, jatuh ke rata-rata.
+  double _costOf(Product p) {
+    final last = p.lastPurchasePrice ?? 0;
+    if (last > 0) return last;
+    return p.purchasePrice ?? 0;
+  }
+
+  // Cari produk berdasarkan SKU hasil scan lalu tambahkan ke keranjang.
+  Future<void> _handleScannedCode(String rawCode) async {
+    final code = rawCode.trim();
+    if (code.isEmpty) return;
+
+    final products =
+        ref.read(allProductsProvider).asData?.value ?? const <Product>[];
+    final lower = code.toLowerCase();
+    Product? match;
+    for (final p in products) {
+      final sku = (p.sku ?? '').trim().toLowerCase();
+      if (sku.isNotEmpty && sku == lower) {
+        match = p;
+        break;
+      }
+    }
+
+    if (match == null) {
+      // Kosongkan kotak cari agar scan berikutnya tidak menumpuk.
+      _searchController.clear();
+      await _soundService.playErrorSound();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Produk dengan SKU "$code" tidak ditemukan.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final m = match;
+
+    // Promo aktif (bila ada) menentukan harga jual.
+    final promos =
+        ref.read(promoProvider).asData?.value ?? const <Promotion>[];
+    Promotion? activePromo;
+    for (final promo in promos) {
+      if (promo.product.id == m.id &&
+          DateTime.now().isBefore(promo.endDate)) {
+        activePromo = promo;
+        break;
+      }
+    }
+    final sellingPrice = activePromo?.discountPrice ?? m.price;
+    final cost = _costOf(m);
+
+    // PENGAMAN STOK: jumlah produk ini yang SUDAH di keranjang + 1 tidak boleh
+    // melebihi stok. Mencegah scan berulang menjual melebihi stok.
+    final cart = ref.read(posCartProvider);
+    final inCart = cart
+        .where((it) => it.product.id == m.id)
+        .fold<int>(0, (s, it) => s + it.quantity);
+    if (inCart + 1 > m.stock) {
+      _searchController.clear();
+      await _soundService.playErrorSound();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(m.stock <= 0
+              ? 'Stok "${m.name}" habis.'
+              : 'Stok "${m.name}" tidak cukup (sisa ${m.stock}, di keranjang $inCart).'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    await _soundService.playSuccessSound();
+    if (!mounted) return;
+
+    // Harga jual di bawah modal → buka dialog "Tambah ke Keranjang" yang
+    // memuat peringatan + konfirmasi (sama seperti POS validasi gogama_office),
+    // bukan menambah diam-diam.
+    if (cost > 0 && sellingPrice < cost) {
+      _searchController.clear();
+      _showAddToCartDialog(m, activePromo);
+      return;
+    }
+
+    // Normal → langsung tambah 1 ke keranjang, lalu KOSONGKAN kotak cari agar
+    // scan berikutnya tidak menumpuk pada kotak pencarian.
+    ref.read(posCartProvider.notifier).addItem(m, 1, sellingPrice);
+    _searchController.clear();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${m.name} ditambahkan ke keranjang.'),
+        duration: const Duration(milliseconds: 900),
+      ),
+    );
   }
 
   void _showAddToCartDialog(Product product, Promotion? activePromo) {
@@ -172,7 +345,10 @@ class PosScreenState extends ConsumerState<PosScreen> {
         parent: ProviderScope.containerOf(context),
         child: AddToPosCartDialog(product: product, activePromo: activePromo),
       ),
-    );
+    ).then((_) {
+      // Setelah dialog ditutup, kembalikan fokus ke penangkap scan.
+      if (mounted) _scanFocusNode.requestFocus();
+    });
   }
 
   void _showAddTemporaryProductDialog() {
@@ -360,7 +536,7 @@ class PosScreenState extends ConsumerState<PosScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('Point of Sale'),
+        title: const Text('POS Manafidh'),
         backgroundColor: Colors.white,
         elevation: 1,
         actions: [
@@ -403,7 +579,14 @@ class PosScreenState extends ConsumerState<PosScreen> {
       bottomNavigationBar: cartItemCount > 0
           ? _buildCartBottomBar(context, cartItemCount)
           : null,
-      body: SafeArea(
+      body: Focus(
+        // Penangkap scan global: selama kotak cari tidak fokus, node inilah
+        // yang menerima ketukan dari alat scanner eksternal (HID), sehingga
+        // scan tetap terdeteksi meski kursor tidak di kotak pencarian.
+        focusNode: _scanFocusNode,
+        autofocus: true,
+        onKeyEvent: _onScanKeyEvent,
+        child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           child: LayoutBuilder(
@@ -416,8 +599,11 @@ class PosScreenState extends ConsumerState<PosScreen> {
                       flex: 2,
                       child: _ProductList(
                         searchController: _searchController,
+                        searchFocusNode: _searchFocusNode,
                         onProductTapped: _showAddToCartDialog,
                         navigateToScanner: _navigateToScanner,
+                        onSubmitScan: _handleScannedCode,
+                        onReturnScanFocus: () => _scanFocusNode.requestFocus(),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -427,12 +613,16 @@ class PosScreenState extends ConsumerState<PosScreen> {
               } else {
                 return _ProductList(
                   searchController: _searchController,
+                  searchFocusNode: _searchFocusNode,
                   onProductTapped: _showAddToCartDialog,
                   navigateToScanner: _navigateToScanner,
+                  onSubmitScan: _handleScannedCode,
+                  onReturnScanFocus: () => _scanFocusNode.requestFocus(),
                 );
               }
             },
           ),
+        ),
         ),
       ),
     );
@@ -589,13 +779,22 @@ class PosScreenState extends ConsumerState<PosScreen> {
 
 class _ProductList extends ConsumerWidget {
   final TextEditingController searchController;
+  final FocusNode searchFocusNode;
   final Function(Product, Promotion?) onProductTapped;
   final VoidCallback navigateToScanner;
+  // Dipanggil saat kasir menekan Enter di kotak (mis. mengetik SKU manual atau
+  // scanner mengirim sufiks Enter ketika kotak kebetulan fokus).
+  final ValueChanged<String> onSubmitScan;
+  // Mengembalikan fokus ke penangkap scan saat kasir mengetuk di luar kotak.
+  final VoidCallback onReturnScanFocus;
 
   const _ProductList({
     required this.searchController,
+    required this.searchFocusNode,
     required this.onProductTapped,
     required this.navigateToScanner,
+    required this.onSubmitScan,
+    required this.onReturnScanFocus,
   });
 
   @override
@@ -609,6 +808,19 @@ class _ProductList extends ConsumerWidget {
           padding: const EdgeInsets.only(bottom: 16.0),
           child: TextField(
             controller: searchController,
+            focusNode: searchFocusNode,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (value) {
+              if (value.trim().isNotEmpty) onSubmitScan(value);
+            },
+            // Mengetuk di luar kotak: lepas fokus & kembalikan ke penangkap scan
+            // agar alat scanner eksternal langsung bisa dipakai lagi.
+            onTapOutside: (_) {
+              if (searchFocusNode.hasFocus) {
+                searchFocusNode.unfocus();
+                onReturnScanFocus();
+              }
+            },
             decoration: InputDecoration(
               hintText: 'Cari nama atau pindai SKU...',
               prefixIcon: const Icon(Icons.search, color: Color(0xFF7F8C8D)),

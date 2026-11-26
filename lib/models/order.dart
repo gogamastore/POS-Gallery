@@ -29,6 +29,9 @@ class Order {
   final num? adminFee;
   final num? serviceFee;
   final num? paymentFee;
+  /// Diskon voucher belanja (marketplace). Angka positif = potongan; mengurangi
+  /// laba karena ditanggung penjual. 0 untuk POS / data lama.
+  final num voucherDiscount;
 
   // Payment Info
   final String paymentMethod;
@@ -76,6 +79,7 @@ class Order {
     this.adminFee,
     this.serviceFee,
     this.paymentFee,
+    this.voucherDiscount = 0,
     required this.paymentMethod,
     required this.paymentStatus,
     this.amountPaid,
@@ -121,6 +125,7 @@ class Order {
       adminFee: data['adminFee'] as num?,
       serviceFee: data['serviceFee'] as num?,
       paymentFee: data['paymentFee'] as num?,
+      voucherDiscount: data['voucherDiscount'] as num? ?? 0,
       paymentMethod: data['paymentMethod'] as String? ?? 'N/A',
       paymentStatus: data['paymentStatus'] as String? ?? 'N/A',
       amountPaid: data['amountPaid'] as num?,
@@ -164,6 +169,7 @@ class Order {
       adminFee: adminFee,
       serviceFee: serviceFee,
       paymentFee: paymentFee,
+      voucherDiscount: voucherDiscount,
       paymentMethod: paymentMethod,
       paymentStatus: paymentStatus,
       amountPaid: amountPaid,

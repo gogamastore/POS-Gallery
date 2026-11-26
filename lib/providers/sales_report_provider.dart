@@ -185,10 +185,12 @@ class SalesReportNotifier extends StateNotifier<SalesReportState> {
           orderCogs += purchasePrice * quantity;
         }
 
-        // Keuntungan HANYA dari penjualan produk (harga jual - modal) × qty.
+        // Keuntungan HANYA dari penjualan produk (harga jual - modal) × qty,
+        // DIKURANGI voucher diskon (potongan ditanggung penjual).
         // Biaya admin, biaya layanan, biaya layanan pembayaran, & ongkir TIDAK
         // dihitung sebagai keuntungan.
-        final orderGrossProfit = productRevenue - orderCogs;
+        final orderGrossProfit =
+            productRevenue - orderCogs - order.voucherDiscount.toDouble();
 
         ordersWithProfit.add(order.copyWith(
           cogs: orderCogs,

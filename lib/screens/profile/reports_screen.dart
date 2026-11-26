@@ -11,6 +11,7 @@ import '../reports/cashdrawer_report_screen.dart';
 import '../reports/purchase_report_screen.dart';
 import '../reports/sales_report_screen.dart';
 import '../reports/stock_flow_report_screen.dart';
+import '../reports/stock_adjustment_report_screen.dart';
 import '../reports/profit_loss_screen.dart'; // 1. IMPORT PROFIT LOSS SCREEN
 
 class ReportsScreen extends StatelessWidget {
@@ -105,6 +106,17 @@ class ReportsScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                     builder: (context) => const StockFlowReportScreen())),
+          ),
+          _buildMenuItem(
+            context,
+            icon: Ionicons.swap_vertical_outline,
+            title: 'Laporan Penyesuaian Stok',
+            subtitle: 'Riwayat penyesuaian stok manual (kasir/admin) + alasannya.',
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) =>
+                        const StockAdjustmentReportScreen())),
           ),
           _buildMenuItem(
             context,

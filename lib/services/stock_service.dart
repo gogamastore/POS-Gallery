@@ -9,9 +9,11 @@ class StockService {
   Future<void> adjustStock({
     required String productId,
     required int quantity,
-    required StockMovementType type, 
+    required StockMovementType type,
     required String reason,
-    required String userId,
+    // Nama admin/kasir yang dipilih di dialog (bukan uid) + id dokumennya.
+    required String adjustedByName,
+    String? adjustedById,
   }) async {
      if (type != StockMovementType.adjustmentIn && type != StockMovementType.adjustmentOut) {
       throw ArgumentError('Tipe penyesuaian tidak valid. Harap gunakan adjustmentIn atau adjustmentOut.');
@@ -29,13 +31,24 @@ class StockService {
         throw Exception("Produk tidak ditemukan!");
       }
 
+      // Simpan snapshot info produk + stok sebelum/sesudah untuk Laporan
+      // Penyesuaian Stok (agar laporan tak perlu baca ulang dokumen produk).
+      final data = productSnapshot.data() as Map<String, dynamic>;
+      final int previousStock = (data['stock'] as num?)?.toInt() ?? 0;
+      final int newStock = previousStock + stockChange;
+
       transaction.set(adjustmentRef, {
         'productId': productId,
+        'productName': data['name'] ?? '',
+        'sku': data['sku']?.toString() ?? '',
         'quantity': quantity,
         'type': typeString,
         'reason': reason,
+        'previousStock': previousStock,
+        'newStock': newStock,
+        'adjustedBy': adjustedByName,
+        'adjustedById': adjustedById,
         'createdAt': FieldValue.serverTimestamp(),
-        'adjustedBy': userId,
       });
 
       transaction.update(productRef, {

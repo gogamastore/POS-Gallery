@@ -181,6 +181,7 @@ class _AddPromoDialogState extends ConsumerState<AddPromoDialog> {
   DateTimeRange? _selectedDateRange;
   final _discountPriceController = TextEditingController();
   bool _isSubmitting = false;
+  bool _limitOnePcs = false;
 
   @override
   void initState() {
@@ -203,6 +204,7 @@ class _AddPromoDialogState extends ConsumerState<AddPromoDialog> {
           discountPrice: double.parse(_discountPriceController.text),
           startDate: _selectedDateRange!.start,
           endDate: _selectedDateRange!.end,
+          maxQtyPerBuyer: _limitOnePcs ? 1 : null,
         );
         
         if (!mounted) return;
@@ -241,6 +243,16 @@ class _AddPromoDialogState extends ConsumerState<AddPromoDialog> {
               ),
               const SizedBox(height: 16),
               _buildDateRangePicker(),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Maksimal pembelian 1 pcs'),
+                subtitle: const Text(
+                    'Pembeli online hanya bisa membeli 1 pcs produk promo ini per pesanan.',
+                    style: TextStyle(fontSize: 12)),
+                value: _limitOnePcs,
+                onChanged: (v) => setState(() => _limitOnePcs = v),
+              ),
             ],
           ),
         ),

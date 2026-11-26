@@ -1,23 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/product.dart';
+import '../../models/staff_model.dart';
 import '../../models/stock_movement.dart'; // DIPERBARUI: Impor enum yang benar
+import '../../services/staff_service.dart';
 
-class StockAdjustmentDialog extends StatefulWidget {
+class StockAdjustmentDialog extends ConsumerStatefulWidget {
   final Product product;
 
   const StockAdjustmentDialog({super.key, required this.product});
 
   @override
-  State<StockAdjustmentDialog> createState() => _StockAdjustmentDialogState();
+  ConsumerState<StockAdjustmentDialog> createState() => _StockAdjustmentDialogState();
 }
 
-class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
+class _StockAdjustmentDialogState extends ConsumerState<StockAdjustmentDialog> {
   // DIPERBARUI: Menggunakan enum StockMovementType yang benar
   StockMovementType _adjustmentType = StockMovementType.adjustmentIn;
   final _quantityController = TextEditingController(text: '1');
   final _reasonController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  // Nama kasir/admin yang dipilih (seperti dropdown di halaman validasi).
+  String? _selectedStaffName;
+  String? _selectedStaffId;
 
   @override
   void dispose() {
@@ -36,12 +42,15 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
         'type': _adjustmentType,
         'quantity': quantity,
         'reason': reason,
+        'adjustedByName': _selectedStaffName,
+        'adjustedById': _selectedStaffId,
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final staffAsync = ref.watch(staffStreamProvider);
     return AlertDialog(
       title: const Text('Penyesuaian Stok'),
       content: Form(
@@ -104,6 +113,49 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                   if (value == null || value.isEmpty) return 'Alasan tidak boleh kosong';
                   return null;
                 },
+              ),
+              const SizedBox(height: 16),
+
+              // Pilih nama kasir/admin yang menyesuaikan (seperti halaman
+              // validasi) — wajib sebelum menyimpan.
+              staffAsync.when(
+                data: (staffList) {
+                  final sorted = [...staffList]
+                    ..sort((a, b) => a.name.compareTo(b.name));
+                  return DropdownButtonFormField<String>(
+                    initialValue: _selectedStaffName,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Disesuaikan oleh',
+                      border: OutlineInputBorder(),
+                    ),
+                    hint: const Text('Pilih nama kasir/admin...'),
+                    items: sorted
+                        .map<DropdownMenuItem<String>>((Staff s) =>
+                            DropdownMenuItem<String>(
+                              value: s.name,
+                              child: Text(s.name),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedStaffName = value;
+                        final match = sorted.where((s) => s.name == value);
+                        _selectedStaffId =
+                            match.isNotEmpty ? match.first.id : null;
+                      });
+                    },
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Harap pilih nama kasir/admin'
+                        : null,
+                  );
+                },
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (e, s) => Text('Gagal memuat daftar staf: $e',
+                    style: const TextStyle(color: Colors.red)),
               ),
             ],
           ),

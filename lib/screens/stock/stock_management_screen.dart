@@ -95,7 +95,8 @@ class _StockManagementScreenState extends ConsumerState<StockManagementScreen> {
               type: result['type'],
               quantity: result['quantity'],
               reason: result['reason'],
-              userId: user.uid,
+              adjustedByName: (result['adjustedByName'] as String?) ?? 'Admin',
+              adjustedById: result['adjustedById'] as String?,
             );
 
         if (mounted) Navigator.of(context).pop();

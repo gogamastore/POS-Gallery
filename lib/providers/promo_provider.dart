@@ -28,15 +28,17 @@ class PromoNotifier extends StateNotifier<AsyncValue<List<Promotion>>> {
     required double discountPrice,
     required DateTime startDate,
     required DateTime endDate,
+    int? maxQtyPerBuyer,
   }) async {
     // Opsi 1: Tampilkan loading di UI sementara aksi berjalan
-    // state = const AsyncValue.loading(); 
+    // state = const AsyncValue.loading();
     try {
       await _promoService.addPromotion(
         productId: productId,
         discountPrice: discountPrice,
         startDate: startDate,
         endDate: endDate,
+        maxQtyPerBuyer: maxQtyPerBuyer,
       );
       await fetchPromotions(); // Ambil ulang data setelah berhasil
     } catch (e) {

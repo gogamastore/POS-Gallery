@@ -44,6 +44,7 @@ class PromoService {
     required double discountPrice,
     required DateTime startDate,
     required DateTime endDate,
+    int? maxQtyPerBuyer,
   }) async {
     try {
       await _db.collection('promotions').add({
@@ -51,6 +52,9 @@ class PromoService {
         'discountPrice': discountPrice,
         'startDate': Timestamp.fromDate(startDate),
         'endDate': Timestamp.fromDate(endDate),
+        // Batas 1 pcs per pesanan (online) bila diaktifkan admin — dipakai
+        // app pembeli/web reseller; penjualan POS tidak terpengaruh.
+        'maxQtyPerBuyer': maxQtyPerBuyer,
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {

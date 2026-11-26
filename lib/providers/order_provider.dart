@@ -197,6 +197,10 @@ final orderDetailsProvider =
     shippingFee: order.shippingFee,
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
+    // Bawa riwayat edit agar bagian "Riwayat Perubahan" tetap tampil di
+    // detail pesanan (rebuild manual ini sebelumnya menjatuhkan editHistory
+    // sehingga selalu kosong).
+    editHistory: order.editHistory,
     status: order.status,
     kasir: order.kasir,
     stockUpdated: order.stockUpdated,
